@@ -131,6 +131,27 @@ class VisionMonitorTests(unittest.TestCase):
         tasks = self.store.snapshot()["tasks"]
         self.assertEqual({task["type"] for task in tasks}, {"fulfill_request", "check_table"})
 
+    def test_process_start_pauses_persisted_monitoring_without_resetting_world(self):
+        self.monitor.start()
+        self.store.observe("1", "A", "empty")
+        self.store.observe("1", "B", "empty")
+        check_id = self.store.snapshot()["tasks"][0]["id"]
+        self.store.accept(check_id, "B")
+        self.store.request("1", "B", "dessert")
+        before = self.store.snapshot()
+        event_count = len(self.store.events())
+
+        restarted = Store(self.path)
+        VisionMonitor(restarted)
+        after = restarted.snapshot()
+
+        self.assertFalse(after["vision"]["monitoring"])
+        self.assertEqual(after["vision"]["regions"], before["vision"]["regions"])
+        for key in ("table", "workers", "tasks", "requests"):
+            self.assertEqual(after[key], before[key])
+        self.assertEqual(len(restarted.events()), event_count + 1)
+        self.assertEqual(restarted.events()[-1]["type"], "vision_monitoring_paused")
+
 
 if __name__ == "__main__":
     unittest.main()

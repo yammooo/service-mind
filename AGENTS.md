@@ -24,6 +24,7 @@ This is an unvalidated prototype heuristic. The generic model has no plate class
 ## Implementation and verification
 
 - Persist state and timestamped events atomically in SQLite; serialize writes with thread locking and transactions.
+- The UNO Q boots `deploy/service-mind.service` as user `arduino`; observation monitoring is forced paused at every process start without resetting table/workers/requests/ROIs/history.
 - Preserve APIs: `/api/state`, `/api/events`, observation, availability, task, request, correction, demo reset, and camera status/stream/region/start/pause endpoints. Validate malformed IDs/actions/regions.
 - `VisionProvider`, functional `MockVisionProvider`, explicit `RealVisionProvider` `NotImplementedError`, and `VISION_PROVIDER=mock` default remain supported.
 - Keep camera ROIs normalized and stability configuration in `config/camera.json`.

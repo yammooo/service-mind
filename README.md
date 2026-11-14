@@ -35,6 +35,27 @@ uvicorn backend.main:app --host 0.0.0.0 --port 7000 --timeout-graceful-shutdown 
 
 The ONNX model comes from [unileon-robotics/YOLO8-ONNX](https://huggingface.co/unileon-robotics/YOLO8-ONNX), pinned to revision `66e5888954d3454da709847e77b36df31f756aa9`. The model card identifies it as an Ultralytics YOLOv8 export trained on 80 COCO classes and licensed AGPL-3.0. Review that license before reuse beyond this prototype. The app runs OpenCV DNN on CPU; no PyTorch, cloud inference, or frame recording is used.
 
+## Start automatically at boot
+
+After installing the app, virtualenv, and model at the paths above, install the systemd unit once:
+
+```bash
+sudo install -m 0644 deploy/service-mind.service /etc/systemd/system/service-mind.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now service-mind.service
+sudo systemctl status service-mind.service
+```
+
+The service runs as `arduino`, waits for networking and `/dev/video0`, and starts the camera feed with observation monitoring **paused**. Start observing from `/admin` when ready. App output is in the system journal:
+
+```bash
+sudo journalctl -u service-mind.service -f
+sudo systemctl restart service-mind.service
+sudo systemctl stop service-mind.service
+```
+
+`systemctl stop` stops the app without changing the SQLite state. After a code update, restart the service; the current state, regions, requests, tasks, and history stay in the database.
+
 ## Admin and worker demo
 
 The admin page shows the live YOLO feed with detections, confidence, inference FPS/time, frame age and camera/model status. Draw or resize the normalized A/B rectangles over the camera image and save them. Changing regions pauses observation processing and clears stabilization evidence. Press **Start observing** to begin a fresh evidence window or **Pause observing** to stop updating the shared plate state while camera detections continue. Reset restores the deterministic world, pauses observation, retains saved regions and keeps the timestamped history with a reset event. The collapsed mock controls are for explicitly testing the coordination API.

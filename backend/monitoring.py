@@ -20,8 +20,7 @@ class VisionMonitor:
         self.last_capture_at = None
         self._reset_evidence()
         if self.store.snapshot()["vision"]["monitoring"]:
-            self.started_at = time.monotonic()
-            self.store.set_monitoring(True)
+            self.store.set_monitoring(False)
 
     def _reset_evidence(self):
         self.evidence = {plate_id: {"candidate": None, "count": 0, "armed": False} for plate_id in ("A", "B")}

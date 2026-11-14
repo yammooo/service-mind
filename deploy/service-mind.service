@@ -1,0 +1,26 @@
+[Unit]
+Description=ServiceMind camera and coordination server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=arduino
+SupplementaryGroups=video
+WorkingDirectory=/home/arduino/service-mind-vision
+Environment=PYTHONPATH=/home/arduino/service-mind-vision
+Environment=SERVICE_MIND_DB=/home/arduino/service-mind-vision/data/service-mind.sqlite3
+Environment=CAMERA_INDEX=0
+Environment=VISION_MODEL_PATH=/home/arduino/service-mind-vision/models/yolov8n.onnx
+Environment=VISION_PROVIDER=mock
+ExecStartPre=/usr/bin/test -r /home/arduino/service-mind-vision/models/yolov8n.onnx
+ExecStartPre=/usr/bin/test -c /dev/video0
+ExecStart=/home/arduino/service-mind-vision/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 7000 --timeout-graceful-shutdown 5
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=10
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
