@@ -93,3 +93,7 @@ uvicorn backend.main:app --host 0.0.0.0 --port 7000 --timeout-graceful-shutdown 
 ```
 
 `backend.vision.VisionProvider` remains the explicit normalized-observation boundary. `MockVisionProvider` supports deterministic mock API tests; `RealVisionProvider` raises `NotImplementedError`, and `VISION_PROVIDER=real` fails clearly rather than pretending to provide general real plate understanding. The current live camera integration is the separate documented YOLO/COCO heuristic in `backend.monitoring`; it does not use an LLM. On startup, any legacy open request missing a linked fulfillment task is migrated transactionally and idempotently, with its prior event history retained. The next reliable hardware step needs a restaurant-specific model and validated empty/food/unknown semantics before any operational reliance.
+
+## Android worker companion
+
+A separately scoped Android client for workers lives in [`mobile/android`](mobile/android/README.md). It targets the existing API and currently uses Meta DAT MockDeviceKit for simulated glasses-session and injected-transcript flow. That mock validates application callbacks and commands, not acoustic speech recognition or physical glasses behavior; see its README for setup and limitations.
