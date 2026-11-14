@@ -2,11 +2,12 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
+from backend.live_vision import app, camera_ready
+from backend.monitoring import VisionMonitor
 from backend.store import DomainError, Store
 from backend.vision import create_vision_provider
 
@@ -14,10 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = Path(os.environ.get("SERVICE_MIND_DB", ROOT / "data" / "service-mind.sqlite3"))
 VISION_PROVIDER_NAME = os.environ.get("VISION_PROVIDER", "mock").lower()
 
-app = FastAPI(title="ServiceMind", description="A local restaurant service coordination prototype")
 app.state.store = Store(DB_PATH)
 app.state.vision = create_vision_provider(VISION_PROVIDER_NAME)
-app.mount("/assets", StaticFiles(directory=ROOT / "frontend"), name="assets")
+app.state.vision_monitor = VisionMonitor(app.state.store)
 
 
 class Observation(BaseModel):
@@ -43,16 +43,30 @@ class Correction(BaseModel):
     correction: Literal["not_ready"]
 
 
+class VisionRegions(BaseModel):
+    regions: dict[Literal["A", "B"], tuple[float, float, float, float]]
+
+
 @app.exception_handler(DomainError)
 async def domain_error_handler(request: Request, exc: DomainError):
     return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 
 @app.get("/", include_in_schema=False)
+@app.get("/admin", include_in_schema=False)
 def home(worker: str | None = Query(default=None)):
     if worker is not None and worker not in {"A", "B"}:
         raise HTTPException(status_code=404, detail="Unknown worker")
-    return FileResponse(ROOT / "frontend" / "index.html")
+    if worker:
+        return RedirectResponse(f"/worker/{worker}", status_code=307)
+    return FileResponse(ROOT / "frontend" / "admin.html")
+
+
+@app.get("/worker/{worker_id}", include_in_schema=False)
+def worker_view(worker_id: str):
+    if worker_id not in {"A", "B"}:
+        raise HTTPException(status_code=404, detail="Unknown worker")
+    return FileResponse(ROOT / "frontend" / "worker.html")
 
 
 @app.get("/api/state")
@@ -68,7 +82,25 @@ def get_events():
 @app.post("/api/observations")
 def observe(body: Observation):
     normalized = app.state.vision.observe(body.plate_id, body.food_state)
-    return app.state.store.observe(body.table_id, normalized["plate_id"], normalized["food_state"])
+    return app.state.vision_monitor.observe_mock(body.table_id, normalized["plate_id"], normalized["food_state"])
+
+
+@app.post("/api/vision/regions")
+def set_vision_regions(body: VisionRegions):
+    return app.state.vision_monitor.set_regions(body.regions)
+
+
+@app.post("/api/vision/start")
+def start_vision():
+    with app.state.vision_monitor.lock:
+        if not camera_ready():
+            raise HTTPException(status_code=503, detail="Camera unavailable or stale; restart ServiceMind after reconnecting it")
+        return app.state.vision_monitor.start()
+
+
+@app.post("/api/vision/pause")
+def pause_vision():
+    return app.state.vision_monitor.pause()
 
 
 @app.post("/api/workers/{worker_id}/availability")
@@ -100,9 +132,9 @@ def create_request(table_id: str, body: TableRequest):
 def correct_table(table_id: str, body: Correction):
     if body.correction != "not_ready":
         raise HTTPException(status_code=400, detail="Unsupported correction")
-    return app.state.store.correct_not_ready(table_id)
+    return app.state.vision_monitor.correct_not_ready(table_id)
 
 
 @app.post("/api/demo/reset")
 def reset_demo():
-    return app.state.store.reset()
+    return app.state.vision_monitor.reset()

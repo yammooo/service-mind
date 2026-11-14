@@ -97,7 +97,7 @@ teddy bear
 hair drier
 toothbrush""".splitlines()
 
-app = FastAPI(title="ServiceMind live vision")
+app = FastAPI(title="ServiceMind", description="A local restaurant service coordination prototype")
 app.mount("/assets", StaticFiles(directory=ROOT / "frontend"), name="assets")
 state_lock = threading.Lock()
 stop_event = threading.Event()
@@ -164,13 +164,17 @@ def camera_worker():
             raise RuntimeError(f"Cannot open camera {CAMERA}")
         _publish(camera="connected", error=None)
         previous = None
+        frame_id = 0
         while not stop_event.is_set():
             ok, frame = camera.read()
             captured_at = time.perf_counter()
             if not ok:
                 raise RuntimeError("Camera stopped returning frames")
+            frame_id += 1
             if frame.shape[:2] != (HEIGHT, WIDTH):
                 frame = cv2.resize(frame, (WIDTH, HEIGHT))
+            monitor = getattr(app.state, "vision_monitor", None)
+            context = monitor.begin_frame(captured_at, frame_id) if monitor else None
             started = time.perf_counter()
             net.setInput(cv2.dnn.blobFromImage(frame, 1 / 255.0, (WIDTH, HEIGHT), swapRB=True, crop=False))
             detections = decode_predictions(net.forward())
@@ -180,15 +184,21 @@ def camera_worker():
                 right, bottom = min(WIDTH - 1, int(x + width)), min(HEIGHT - 1, int(y + height))
                 cv2.rectangle(frame, (left, top), (right, bottom), (35, 210, 145), 2)
                 cv2.putText(frame, f"{label} {score:.2f}", (left, max(20, top - 7)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (35, 210, 145), 2)
+            detection_rows = [{"label": label, "confidence": round(score, 2), "box": [round(x), round(y), round(x + width), round(y + height)]} for (x, y, width, height), score, label in detections]
+            if monitor and context:
+                monitor.consume_frame(context, detection_rows)
             ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
             if not ok:
                 raise RuntimeError("Could not encode annotated camera frame")
             now = time.perf_counter()
             fps = 1 / (captured_at - previous) if previous else 0
             previous = captured_at
-            _publish(encoded.tobytes(), camera="connected", fps=round(fps, 1), inference_ms=round(inference_ms), frame_at=captured_at, detections=[{"label": label, "confidence": round(score, 2)} for _, score, label in detections], error=None)
+            _publish(encoded.tobytes(), camera="connected", fps=round(fps, 1), inference_ms=round(inference_ms), frame_at=captured_at, detections=detection_rows, error=None)
     except Exception as error:
         _publish(_error_jpeg(str(error)), camera="error", fps=0, inference_ms=0, frame_at=None, frame_age_ms=None, detections=[], error=str(error))
+        monitor = getattr(app.state, "vision_monitor", None)
+        if monitor:
+            monitor.camera_unavailable()
     finally:
         if camera is not None:
             camera.release()
@@ -210,7 +220,6 @@ def stop_camera():
         worker_thread.join(timeout=3)
 
 
-@app.get("/", include_in_schema=False)
 @app.get("/vision", include_in_schema=False)
 def page():
     return FileResponse(ROOT / "frontend" / "vision.html")
@@ -222,7 +231,16 @@ def get_status():
         result = dict(status)
     if result.get("frame_at"):
         result["frame_age_ms"] = round((time.perf_counter() - result.pop("frame_at")) * 1000)
+    monitor = getattr(app.state, "vision_monitor", None)
+    if monitor:
+        result["plate_observations"] = monitor.status()
     return result
+
+
+def camera_ready() -> bool:
+    with state_lock:
+        captured_at = status.get("frame_at")
+        return status["camera"] == "connected" and captured_at is not None and time.perf_counter() - captured_at <= 2.0
 
 
 @app.get("/api/vision/stream")

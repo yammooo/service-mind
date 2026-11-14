@@ -1,43 +1,34 @@
 # ServiceMind prototype
 
-## Current milestone — live camera vision
+## Current milestone — integrated admin, workers, and live camera heuristic
 
-The active milestone is a standalone live YOLO object-detection page at `/vision` running on the Arduino UNO Q with the USB camera at `/dev/video0`. Show annotated boxes for all COCO classes and report measured inference FPS, inference time, frame age, detections, and camera/model errors. Use a small pretrained ONNX model and CPU inference with the lightest working ARM64 runtime. Video stays in memory and is not saved. This milestone does not map detections to plates, food states, requests, or tasks.
+Build and maintain the local ServiceMind prototype for the Junction demo. The active implementation is one FastAPI/Uvicorn process with SQLite, plain responsive HTML/CSS/JavaScript, relative API URLs, one-second polling, and a live USB camera on the Arduino UNO Q (Linux ARM64). Use `/admin`, `/worker/A`, and `/worker/B`; `/` aliases the admin page and `/?worker=A|B` redirects to the worker view.
 
-The coordination prototype requirements below describe later work and must not expand this milestone. Do not claim plate or meal recognition; the generic pretrained model is for exploratory live object visualization only.
+The live page shows all detections from a small pretrained YOLOv8n COCO ONNX model and measured inference FPS, inference time, frame age, confidence, and errors. The admin can draw and persist normalized A/B rectangles, start/pause observation processing, reset the world, and use collapsed mock controls. Worker pages expose focused availability and task actions, dessert/water, and not-ready actions. Existing Store/SQLite is the source of truth; do not add a parallel state store or server.
 
-## Goal and demo scope
+Only stable COCO food detection within saved regions informs the experimental food/empty heuristic. Five consecutive fresh frames with a food label arm that region; five fresh frames without food may report empty. Person overlap, stale frames, paused observation, or camera/model error must remain unknown and must never count as empty. Region changes and reset clear stabilization evidence. Reset pauses observation, keeps ROIs, and appends an audit event. In-flight inference started before pause/start/reset/ROI changes must not commit into the new state generation.
 
-Build a complete local prototype for the Junction demo, due Nov 15, 2026 at 10:00 Finnish time. The demo uses one shared AI brain for physical restaurant teams. This is a one-process FastAPI/Uvicorn app with SQLite, plain responsive HTML/CSS/JavaScript, relative API URLs, and one-second polling. It must run on a Linux ARM64 laptop later. No cloud service, Node runtime, LLM inference, glasses integration, or task integration from vision is in scope.
+This is an unvalidated prototype heuristic. The generic model has no plate class, misses objects, and cannot reliably recognize hands/occlusion; do not claim validated plate understanding or operational safety. No cloud, LLM, authentication, Meta glasses, or trained restaurant model integration is in scope. Do not expose the unauthenticated local demo server outside trusted demo Wi-Fi.
 
-## Fixed demo data and behavior
+## Fixed coordination behavior
 
-- One restaurant table and two customers, with plates A and B and workers A and B.
-- Initial state: both customers are eating; worker A is busy and worker B is available; no tasks.
-- The later coordination milestone uses deterministic rules only. When the first plate is reported empty, do not create a task. When the second plate is reported empty, set the table to `needs_check` and create exactly one `check_table` task offered to an available worker.
-- Accept assigns the task, makes that worker busy, and sets the table to `being_served`. A dessert request creates a shared request and timestamped event. Complete makes the worker available and table `checked`; do not recreate a task while the same observation remains unchanged.
-- Decline reoffers to a different available worker. A `not_ready` correction suppresses follow-up until relevant new evidence or reset.
-- Duplicate/unchanged observations do not add events or tasks. Unknown is never treated as empty.
+- One restaurant table, two customers/plates A and B, workers A and B.
+- Initial state: both customers eating; worker A busy, worker B available; no tasks.
+- A first empty report does not create a task. When both plates are empty, set `needs_check` and offer exactly one `check_table` task to an available worker.
+- Accept assigns the task, marks the worker busy and table `being_served`. Dessert/water requests create a shared request and timestamped event. Complete makes the worker available and table `checked`; unchanged evidence must not recreate a task.
+- Decline reoffers to another available worker. `not_ready` suppresses follow-up until relevant new evidence or reset.
+- Duplicate/unchanged observations add no events or tasks. Unknown is never empty.
+- Reset restores deterministic world state and retains chronological history with a reset event.
 - State enums: table `eating`, `needs_check`, `being_served`, `checked`; task `pending`, `offered`, `assigned`, `completed`, `cancelled`.
-- Reset restores deterministic demo state and retains history by recording a reset event.
 
-## Implementation requirements
+## Implementation and verification
 
-- Persist current state and timestamped events atomically in SQLite; serialize writes safely with thread locking and transactions.
-- Expose `GET /api/state`, `GET /api/events`, and POST APIs for observations, worker availability, task accept/decline/complete, table requests, corrections, and demo reset. Validate malformed IDs, states, and actions.
-- Define a `VisionProvider` interface and functional `MockVisionProvider` API pipeline. `RealVisionProvider` must fail explicitly with `NotImplementedError`; `VISION_PROVIDER=mock` is default and selecting `real` must fail clearly.
-- Include `config/camera.json` with normalized regions A `[0.05, 0.15, 0.45, 0.85]`, B `[0.55, 0.15, 0.95, 0.85]`, and `stable_observations_required: 5`. No real inference.
-- Admin view at `/`; worker views at `/?worker=A` and `/?worker=B`. Show shared tasks, requests, workers, chronological history, and clearly labeled mock food/empty/unknown controls and reset. Worker views show availability, assigned task reason, accept/decline/complete, dessert/water/not-ready controls, shared state, and recent notifications without extra task-request controls.
-- Accessible mobile-friendly styling with clear product presentation and labels.
-- SQLite and virtualenv/cache files must be ignored by git.
-
-## Verification and docs
-
-- Add essential tests covering: initial state; first and second empty observations; duplicates; accept; shared requests; complete; reset; persistence after restart; decline; correction; invalid transitions.
-- Run the app with `uvicorn backend.main:app --host 0.0.0.0 --port 8000` and exercise its real HTTP API.
-- README must give exact setup commands, URLs, demo flow, tests, API, vision config, future hardware integration boundary, and current limitations.
-
-## Working constraints
-
-- Follow the ponytail skill at `/home/yammo/.codex/plugins/cache/ponytail/ponytail/5.3.3/skills/ponytail/SKILL.md`: smallest complete implementation, reuse dependencies, cover caller/config/test impact, and test non-trivial logic.
-- Use Astra for orchestration and Luna xhigh for all engineering.
+- Persist state and timestamped events atomically in SQLite; serialize writes with thread locking and transactions.
+- Preserve APIs: `/api/state`, `/api/events`, observation, availability, task, request, correction, demo reset, and camera status/stream/region/start/pause endpoints. Validate malformed IDs/actions/regions.
+- `VisionProvider`, functional `MockVisionProvider`, explicit `RealVisionProvider` `NotImplementedError`, and `VISION_PROVIDER=mock` default remain supported.
+- Keep camera ROIs normalized and stability configuration in `config/camera.json`.
+- Keep the UI accessible, responsive and focused. The worker view has no admin/mock controls.
+- Keep SQLite, virtualenv/cache files, runtime model weights and captures out of Git. Never save camera frames by default.
+- Test non-trivial logic with `python -m unittest discover -s tests -v`; run the app with `uvicorn backend.main:app --host 0.0.0.0 --port 7000 --timeout-graceful-shutdown 5` and exercise HTTP/browser behavior when changing integration.
+- README documents setup, URLs, demo flow, APIs, model provenance/license, camera limitations, and hardware boundary.
+- Follow `/home/yammo/.codex/plugins/cache/ponytail/ponytail/5.3.3/skills/ponytail/SKILL.md`: smallest complete implementation, reuse dependencies, account for callers/config/tests, test meaningful logic.

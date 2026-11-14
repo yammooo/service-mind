@@ -1,9 +1,16 @@
 import json
+import math
 import sqlite3
 import threading
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+
+CAMERA_CONFIG = json.loads((Path(__file__).resolve().parent.parent / "config" / "camera.json").read_text())
+
+
+def vision_state() -> dict:
+    return {"regions": CAMERA_CONFIG["regions"], "stable_observations_required": CAMERA_CONFIG["stable_observations_required"], "monitoring": False}
 
 
 class DomainError(Exception):
@@ -14,6 +21,7 @@ class DomainError(Exception):
 
 def initial_state() -> dict:
     return {
+        "vision": vision_state(),
         "table": {
             "id": "1",
             "name": "Table 1",
@@ -60,6 +68,18 @@ class Store:
                 if db.execute("SELECT 1 FROM current_state WHERE id = 1").fetchone() is None:
                     self._save_state(db, initial_state())
                     self._save_events(db, [event("demo_started", "ServiceMind demo started")])
+                db.commit()
+            else:
+                db.execute("BEGIN IMMEDIATE")
+                state = json.loads(db.execute("SELECT value FROM current_state WHERE id = 1").fetchone()["value"])
+                defaults = vision_state()
+                if "vision" not in state:
+                    state["vision"] = defaults
+                else:
+                    state["vision"].setdefault("regions", defaults["regions"])
+                    state["vision"].setdefault("stable_observations_required", defaults["stable_observations_required"])
+                    state["vision"].setdefault("monitoring", False)
+                self._save_state(db, state)
                 db.commit()
 
     def _connect(self):
@@ -161,25 +181,35 @@ class Store:
         return emitted
 
     def observe(self, table_id: str, plate_id: str, food_state: str):
+        return self.observe_batch(table_id, {plate_id: food_state}, source="mock")
+
+    def observe_batch(self, table_id: str, observations: dict[str, str], source: str):
         if table_id != "1":
             raise DomainError("Unknown table", 404)
-        if plate_id not in {"A", "B"}:
-            raise DomainError("plate_id must be A or B")
-        if food_state not in {"food", "empty", "unknown"}:
+        if not observations or any(plate_id not in {"A", "B"} for plate_id in observations):
+            raise DomainError("observations must include plate A or B")
+        if any(food_state not in {"food", "empty", "unknown"} for food_state in observations.values()):
             raise DomainError("food_state must be food, empty, or unknown")
+        if source not in {"mock", "camera"}:
+            raise DomainError("source must be mock or camera")
 
         def mutate(state):
-            customer = next(c for c in state["table"]["customers"] if c["plate_id"] == plate_id)
-            if customer["food_state"] == food_state:
+            changed = []
+            for plate_id, food_state in observations.items():
+                customer = next(c for c in state["table"]["customers"] if c["plate_id"] == plate_id)
+                if customer["food_state"] != food_state:
+                    changed.append((customer, plate_id, customer["food_state"], food_state))
+            if not changed:
                 return []
-            previous = customer["food_state"]
-            customer["food_state"] = food_state
-            emitted = [event("plate_observed", f"Plate {plate_id} at Table 1 changed from {previous} to {food_state}", table_id="1", plate_id=plate_id, food_state=food_state, source="mock")]
+            emitted = []
+            for customer, plate_id, previous, food_state in changed:
+                customer["food_state"] = food_state
+                emitted.append(event("plate_observed", f"Plate {plate_id} at Table 1 changed from {previous} to {food_state}", table_id="1", plate_id=plate_id, food_state=food_state, source=source))
             automation = state["_automation"]
-            if automation["not_ready_suppressed"] and food_state != "unknown":
+            if automation["not_ready_suppressed"] and any(food_state != "unknown" for _, _, _, food_state in changed):
                 automation["not_ready_suppressed"] = False
                 automation["check_requested"] = False
-                emitted.append(event("correction_cleared", "New plate evidence cleared the not-ready correction", plate_id=plate_id))
+                emitted.append(event("correction_cleared", "New plate evidence cleared the not-ready correction"))
             if state["table"]["status"] == "checked":
                 state["table"]["status"] = "eating"
                 automation["check_requested"] = False
@@ -201,6 +231,79 @@ class Store:
                     state["tasks"].append(task)
                     emitted.append(event("task_created", "Check table task created", task_id=task["id"], table_id="1"))
                     emitted.extend(self._offer_task(state, task))
+            return emitted
+
+        return self._change(mutate)
+
+    @staticmethod
+    def _validated_regions(regions: dict) -> dict:
+        if not isinstance(regions, dict) or set(regions) != {"A", "B"}:
+            raise DomainError("regions must contain exactly A and B")
+        normalized = {}
+        for plate_id, values in regions.items():
+            if not isinstance(values, (list, tuple)) or len(values) != 4:
+                raise DomainError(f"region {plate_id} must have four normalized coordinates")
+            if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values):
+                raise DomainError(f"region {plate_id} coordinates must be finite numbers")
+            x1, y1, x2, y2 = map(float, values)
+            if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
+                raise DomainError(f"region {plate_id} must be an increasing rectangle inside the image")
+            normalized[plate_id] = [x1, y1, x2, y2]
+        return normalized
+
+    def set_regions(self, regions: dict):
+        normalized = self._validated_regions(regions)
+
+        def mutate(state):
+            vision = state["vision"]
+            if vision["regions"] == normalized and not vision["monitoring"]:
+                return []
+            was_monitoring = vision["monitoring"]
+            vision["regions"] = normalized
+            vision["monitoring"] = False
+            emitted = [event("vision_regions_saved", "Plate regions saved; observation monitoring paused", regions=normalized)]
+            if was_monitoring:
+                emitted.append(event("vision_monitoring_paused", "Observation monitoring paused after region changes"))
+            return emitted
+
+        return self._change(mutate)
+
+    def set_monitoring(self, monitoring: bool):
+        if not isinstance(monitoring, bool):
+            raise DomainError("monitoring must be true or false")
+
+        def mutate(state):
+            vision = state["vision"]
+            if not monitoring and not vision["monitoring"]:
+                return []
+            vision["monitoring"] = monitoring
+            if not monitoring:
+                return [event("vision_monitoring_paused", "Observation monitoring paused")]
+            emitted = [event("vision_monitoring_started", "Observation monitoring started; waiting for fresh stable evidence")]
+            active_tasks = any(task["status"] in {"pending", "offered", "assigned"} for task in state["tasks"])
+            for customer in state["table"]["customers"]:
+                if customer["food_state"] != "unknown":
+                    previous = customer["food_state"]
+                    customer["food_state"] = "unknown"
+                    emitted.append(event("plate_observed", f"Plate {customer['plate_id']} observation cleared for fresh monitoring", table_id="1", plate_id=customer["plate_id"], previous_state=previous, food_state="unknown", source="camera"))
+            if not active_tasks and state["table"]["status"] in {"checked", "needs_check"}:
+                state["table"]["status"] = "eating"
+            state["_automation"]["check_requested"] = active_tasks
+            return emitted
+
+        return self._change(mutate)
+
+    def camera_unavailable(self):
+        def mutate(state):
+            if not state["vision"]["monitoring"]:
+                return []
+            state["vision"]["monitoring"] = False
+            emitted = [event("vision_camera_unavailable", "Camera unavailable; observation monitoring paused")]
+            for customer in state["table"]["customers"]:
+                if customer["food_state"] != "unknown":
+                    previous = customer["food_state"]
+                    customer["food_state"] = "unknown"
+                    emitted.append(event("plate_observed", f"Plate {customer['plate_id']} state is unknown because the camera is unavailable", table_id="1", plate_id=customer["plate_id"], previous_state=previous, food_state="unknown", source="camera"))
             return emitted
 
         return self._change(mutate)
@@ -328,8 +431,10 @@ class Store:
             previous = {"task_count": len(state["tasks"]), "request_count": len(state["requests"])}
             next_task_id = state["_next_task_id"]
             next_request_id = state["_next_request_id"]
+            regions = state["vision"]["regions"]
             state.clear()
             state.update(initial_state())
+            state["vision"]["regions"] = regions
             state["_next_task_id"] = next_task_id
             state["_next_request_id"] = next_request_id
             return [event("demo_reset", "Demo state reset to its starting values", previous=previous)]

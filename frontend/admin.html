@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ServiceMind · Admin</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/admin.css" />
+  <script src="/assets/admin.js" defer></script>
+</head>
+<body>
+<div class="app-shell admin-shell">
+  <header class="topbar"><a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>servicemind<span class="brand-dot">.</span></span></a><nav class="view-switch" aria-label="Choose a view"><a href="/admin" aria-current="page">Admin</a><a href="/worker/A">Worker A</a><a href="/worker/B">Worker B</a></nav></header>
+  <main>
+    <section class="intro-row admin-intro"><div><p class="eyebrow">SERVICE FLOOR · TABLE 01</p><h1>One shared view of the table.</h1><p class="intro-copy">Calibrate the camera regions, then let stable observations update the team's shared state.</p></div><div id="connection-label" class="connection-pill" role="status"><span class="live-dot"></span><span>Connecting…</span></div></section>
+    <section class="admin-grid">
+      <div class="admin-main">
+        <section class="panel camera-panel" aria-labelledby="camera-heading">
+          <div class="panel-heading"><div><p class="eyebrow">CAMERA 0</p><h2 id="camera-heading">Live table view</h2></div><span id="vision-state" class="status-chip">Loading</span></div>
+          <div class="camera-frame"><img id="live-feed" src="/api/vision/stream" alt="Live annotated camera feed" /><svg id="roi-editor" viewBox="0 0 640 480" role="application" aria-label="Plate region editor. Select a plate, drag to move or resize, or choose Draw to replace it. Arrow keys move the selected region." tabindex="0"><g id="overlay-objects"></g></svg></div>
+          <div class="camera-stats" aria-live="polite"><span><b id="fps-value">—</b><small>FPS</small></span><span><b id="inference-value">—</b><small>inference</small></span><span><b id="age-value">—</b><small>frame age</small></span><span><b id="detection-count">0</b><small>objects</small></span></div>
+          <p id="camera-error" class="camera-error" role="status" hidden></p>
+          <div class="roi-tools"><div><strong>Plate regions</strong><p id="roi-help" class="muted small-copy">Select a plate to move it. Drag a corner to resize. Use Draw to replace its region.</p></div><div class="region-buttons"><button class="button button-outline" data-select-region="A" type="button">Plate A</button><button class="button button-outline" data-select-region="B" type="button">Plate B</button><button class="button button-quiet" data-draw-region="A" type="button">Draw A</button><button class="button button-quiet" data-draw-region="B" type="button">Draw B</button><button class="button button-outline" id="save-regions" type="button" disabled>Save regions</button></div><div class="region-values"><span id="region-a-value">Plate A: —</span><span id="region-b-value">Plate B: —</span></div></div>
+        </section>
+        <section class="panel control-panel" aria-labelledby="monitor-heading"><div class="panel-heading compact-heading"><div><p class="eyebrow">OBSERVATION CONTROL</p><h2 id="monitor-heading">Camera monitoring</h2></div><span id="monitor-state" class="status-chip">Paused</span></div><p id="monitor-copy" class="muted small-copy">The camera keeps running. Observations are paused.</p><div class="monitor-actions"><button id="start-monitoring" class="button button-primary" type="button">Start observing</button><button id="pause-monitoring" class="button button-outline" type="button">Pause observations</button><button id="reset-demo" class="button button-quiet" type="button">Reset table state</button></div><p class="muted small-copy limit-note">Exploratory only: food must be seen before stable absence can count as empty. People over a region leave it unknown.</p></section>
+        <details class="panel mock-panel"><summary><span><span class="eyebrow">DEBUG ONLY</span><strong>Mock observations</strong></span><span class="mock-label">MOCK</span></summary><p class="muted small-copy">Send a manual test observation through the state API.</p><div id="mock-controls" class="mock-controls"></div></details>
+      </div>
+      <aside class="admin-side">
+        <section class="summary-grid compact-summary" aria-label="Table summary"><article class="summary-card table-summary"><div class="summary-top"><span class="card-label">TABLE 01</span></div><div id="table-status" class="summary-value">—</div><div id="plate-summary" class="summary-note">Two guests · Plates A and B</div></article><article class="summary-card"><div class="summary-top"><span class="card-label">AVAILABLE</span></div><div id="available-count" class="summary-value">—</div><div class="summary-note">workers on shift</div></article><article class="summary-card"><div class="summary-top"><span class="card-label">REQUESTS</span></div><div id="request-count" class="summary-value">—</div><div class="summary-note">open requests</div></article></section>
+        <section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">GUESTS</p><h2>Table 01</h2></div><span id="table-chip" class="status-chip">—</span></div><div id="guest-list" class="guest-list" aria-live="polite"></div></section>
+        <section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">NEXT ACTION</p><h2>Team tasks</h2></div><span id="task-count" class="count-chip">0</span></div><div id="task-list" class="task-list" aria-live="polite"></div></section>
+        <section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">PEOPLE</p><h2>On shift</h2></div></div><div id="worker-list" class="worker-list"></div></section>
+        <section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">AT THE TABLE</p><h2>Guest requests</h2></div></div><div id="request-list" class="request-list"></div></section>
+        <section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">SHARED CONTEXT</p><h2>Recent activity</h2></div></div><ol id="event-list" class="event-list" aria-live="polite"></ol></section>
+      </aside>
+    </section>
+  </main>
+  <footer><span>ServiceMind</span><span>One team, one shared picture.</span><span class="footer-note">Local prototype · camera evidence is exploratory</span></footer>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
