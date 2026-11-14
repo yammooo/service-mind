@@ -62,7 +62,12 @@ class Store:
             db.executescript(
                 "CREATE TABLE IF NOT EXISTS current_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);"
                 "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, type TEXT NOT NULL, message TEXT NOT NULL, details TEXT NOT NULL);"
+                "CREATE TABLE IF NOT EXISTS app_mode (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);"
             )
+            mode = db.execute("SELECT value FROM app_mode WHERE id = 1").fetchone()
+            if mode and mode["value"] != "legacy":
+                raise RuntimeError(f"Database belongs to {mode['value']} mode")
+            db.execute("INSERT OR IGNORE INTO app_mode (id, value) VALUES (1, 'legacy')")
             if db.execute("SELECT 1 FROM current_state WHERE id = 1").fetchone() is None:
                 db.execute("BEGIN IMMEDIATE")
                 if db.execute("SELECT 1 FROM current_state WHERE id = 1").fetchone() is None:

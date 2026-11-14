@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f4f6f1" />
+  <link rel="icon" href="data:," />
+  <title>ServiceMind · Floor simulation</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/simulation.css" />
+  <script src="/assets/simulation.js" defer></script>
+</head>
+<body>
+  <div class="app-shell simulation-shell">
+    <header class="topbar">
+      <a class="brand" href="/admin" aria-label="ServiceMind admin home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>servicemind<span class="brand-dot">.</span></span></a>
+      <nav class="view-switch" aria-label="Choose a view"><a href="/simulation" aria-current="page">Simulation</a></nav>
+    </header>
+    <main>
+      <section class="intro-row"><div><p class="eyebrow">OPT-IN · SIMULATED FLOOR</p><h1>Service flow, in real time.</h1><p class="intro-copy">Six tables across two rooms. Change events and advance the clock to explore routing.</p></div><div id="connection" class="connection-pill" role="status"><span class="live-dot"></span><span>Connecting…</span></div></section>
+      <section class="simulation-layout">
+        <div class="simulation-main">
+          <section class="panel" aria-labelledby="map-heading">
+            <div class="panel-heading"><div><p class="eyebrow">DINING FLOOR</p><h2 id="map-heading">Table map</h2></div><span id="floor-clock" class="status-chip">00:00</span></div>
+            <div id="room-map" class="room-map" aria-live="polite"></div>
+          </section>
+          <section class="panel" aria-labelledby="tasks-heading">
+            <div class="panel-heading compact-heading"><div><p class="eyebrow">ROUTING QUEUE</p><h2 id="tasks-heading">Tasks</h2></div><span id="task-count" class="count-chip">0</span></div>
+            <div id="task-list" class="task-list" aria-live="polite"></div>
+          </section>
+        </div>
+        <aside class="simulation-side">
+          <section class="panel" aria-labelledby="clock-heading"><div class="panel-heading compact-heading"><div><p class="eyebrow">TEST CONTROLS</p><h2 id="clock-heading">Simulated clock</h2></div></div><form id="clock-form" class="inline-form"><label>Advance seconds<input id="clock-seconds" type="number" min="1" max="3600" value="60" required /></label><button class="button button-primary" type="submit">Advance time</button></form><label class="urgent-toggle"><input id="urgent-mode" type="checkbox" /> Mark new work urgent</label><p class="muted small-copy">Time advances only when you choose it. Urgency applies to new orders and requests.</p></section>
+          <section class="panel" aria-labelledby="workers-heading"><div class="panel-heading compact-heading"><div><p class="eyebrow">PEOPLE</p><h2 id="workers-heading">Workers</h2></div></div><div id="worker-list" class="worker-list"></div></section>
+          <section class="panel" aria-labelledby="events-heading"><div class="panel-heading compact-heading"><div><p class="eyebrow">SIMULATION LOG</p><h2 id="events-heading">Event history</h2></div></div><ol id="event-list" class="event-list" aria-live="polite"></ol></section>
+          <section class="panel reset-panel"><p class="eyebrow">START OVER</p><p class="muted small-copy">Restore the deterministic simulation state. Event history is retained.</p><button id="reset" class="button button-outline" type="button">Reset simulation</button></section>
+        </aside>
+      </section>
+    </main>
+    <footer><span>ServiceMind</span><span>Local floor simulation</span><span>Separate from live camera state</span></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

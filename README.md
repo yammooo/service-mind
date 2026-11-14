@@ -65,9 +65,29 @@ The initial world has two customers eating, Worker A busy, Worker B available, a
 
 This is an exploratory heuristic, not reliable plate recognition. The generic model has no plate class and can miss or misclassify bananas; other foods are intentionally ignored. Fixed camera placement and suitable lighting are required. Do not use its inferred state as a safety-critical or operational guarantee.
 
+## Opt-in floor simulation
+
+The interactive simulation runs the same FastAPI process and SQLite event store in a separate mode. It does not start the camera and does not alter the default camera demo. Start it locally with a dedicated database and port:
+
+```bash
+SERVICE_MIND_MODE=simulation \
+SERVICE_MIND_SIM_DB=/tmp/service-mind-simulation.sqlite3 \
+uvicorn backend.main:app --host 127.0.0.1 --port 7002 --timeout-graceful-shutdown 5
+```
+
+Open `http://127.0.0.1:7002/simulation`. The simulation database defaults to `data/service-mind-simulation.sqlite3`; `SERVICE_MIND_SIM_DB` overrides only that path. A database mode marker prevents the camera demo Store from opening a simulation database or vice versa. Do not point both modes at the same SQLite file.
+
+The floor has six tables: Tables 1–3 are in Room 1 and Tables 4–6 in Room 2. Workers W1 and W2 prefer Room 1; W3 prefers Room 2. Kitchen and bar are independent order-ready sources. The page can create ready deliveries, water/dessert requests, simulated finished-meal evidence, and table service holds. An explicit urgency toggle applies to newly created orders and requests. It can also change worker availability, advance the simulated clock, and accept, decline, complete, release, or acknowledge tasks.
+
+Routing considers urgent tasks first, then tasks with at least 90 eligible simulated seconds of wait, then ready food deliveries, customer requests, and table checks. Ties use longest eligible wait, room preference, longest worker availability, then worker ID. Pending tasks are reranked whenever work or worker state changes; an existing offer stays with its worker unless that offer becomes invalid or the worker declines. Accepted tasks remain assigned. A table hold blocks food delivery only for that table; if a hold starts during an assigned delivery, the task stays with its worker and requires acknowledgement plus explicit hold clearance before completion. Timed holds show an overdue confirmation event but remain active until cleared. Duplicate order IDs and repeated open requests do not create duplicate work. Reset restores the floor and keeps chronological event history.
+
+This is a deterministic coordination exercise, not a camera, capacity, staffing, or operational-safety validation. It uses simulated events only and should remain bound to a trusted local network.
+
 ## API
 
 All paths are relative to the current host. `GET /api/state` returns shared table, customer, worker, task, request, and vision-monitor state. `GET /api/events` returns chronological audit history. Mutations and their events are committed together in SQLite transactions.
+
+Simulation mode exposes `GET /api/simulation/state` and `/events`; `POST /api/simulation/clock/advance`; table `/order-ready`, `/requests`, `/evidence`, `/hold`, and `/hold/clear`; worker `/availability`; task `/accept`, `/decline`, `/complete`, `/release`, and `/acknowledge`; and `/api/simulation/reset`. Simulation endpoints return 404 unless `SERVICE_MIND_MODE=simulation` is selected. The legacy APIs above keep their existing behavior in the default mode.
 
 | Endpoint | Body / behavior |
 | --- | --- |

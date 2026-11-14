@@ -33,3 +33,13 @@ This is an unvalidated prototype heuristic. The generic model has no plate class
 - Test non-trivial logic with `python -m unittest discover -s tests -v`; run the app with `uvicorn backend.main:app --host 0.0.0.0 --port 7000 --timeout-graceful-shutdown 5` and exercise HTTP/browser behavior when changing integration.
 - README documents setup, URLs, demo flow, APIs, model provenance/license, camera limitations, and hardware boundary.
 - Follow `/home/yammo/.codex/plugins/cache/ponytail/ponytail/5.3.3/skills/ponytail/SKILL.md`: smallest complete implementation, reuse dependencies, account for callers/config/tests, test meaningful logic.
+
+## Opt-in floor coordination simulation
+
+This branch adds a separate, opt-in simulation milestone. The existing camera demo and its one-table state remain the default and must keep their behavior. Select simulation with `SERVICE_MIND_MODE=simulation`; it uses only `SERVICE_MIND_SIM_DB` (default `data/service-mind-simulation.sqlite3`) and rejects a database tagged for the other mode. One process selects one Store. Simulation mode never starts or reads the camera.
+
+The simulated floor has Tables 1–3 in Room 1 and Tables 4–6 in Room 2. Worker W1 and W2 prefer Room 1; W3 prefers Room 2. Kitchen and bar are order-ready input sources, not room names. Requests and finished-meal evidence create separate service-request and check-table tasks; neither reports that food is ready.
+
+Simulation dispatch ranks urgent work first, then work with at least 90 eligible simulated wait seconds, then ready food deliveries, customer requests, and table checks. Ties use longest eligible wait, room preference, longest worker availability, then worker ID. A table service hold blocks only food delivery for that table and pauses its delivery wait. Offers remain with their worker until invalidated or declined; accepted tasks are never reassigned automatically. A hold that conflicts with an assigned delivery needs task acknowledgement and explicit hold clearance before completion. Timed holds only raise an overdue confirmation event; they never clear themselves. Reset restores the floor while retaining chronological event history.
+
+Run the legacy suite plus simulation rules with `python -m unittest discover -s tests -v`. Keep the simulation database outside the main camera database; do not use camera observations as simulated evidence or describe this mode as a validation of restaurant operations.
