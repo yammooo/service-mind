@@ -1,6 +1,34 @@
 # ServiceMind
 
-A one-process restaurant service coordination prototype. It runs locally with FastAPI, SQLite, and plain HTML/CSS/JavaScript. The demo uses deterministic mock observations and rules; it does not call an LLM or use a camera.
+A local ServiceMind prototype. The active milestone is a live on-device camera view at `/vision` on the Arduino UNO Q. It shows a pretrained YOLOv8n model's general COCO object detections over the USB camera feed. It does not identify plates, food state, or service actions.
+
+## Live camera milestone
+
+The app uses OpenCV DNN to run a small ONNX model on CPU; it avoids PyTorch and does not save camera frames. The first run downloads the model separately because model weights are excluded from Git.
+
+```bash
+cd /home/arduino/service-mind-vision
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+mkdir -p models
+curl -L --fail -o models/yolov8n.onnx https://huggingface.co/unileon-robotics/YOLO8-ONNX/resolve/66e5888954d3454da709847e77b36df31f756aa9/yolov8n.onnx
+uvicorn backend.live_vision:app --host 0.0.0.0 --port 7000
+```
+
+Open `http://localhost:7000/vision` locally or `http://10.0.41.164:7000/vision` from the same Wi-Fi. The page reports camera/model errors, detected COCO classes and confidence, inference FPS, inference time, and frame age. The process defaults to camera index `0`; override with `CAMERA_INDEX`. Override the ONNX file with `VISION_MODEL_PATH`.
+
+The live vision endpoints are `GET /vision` for the page, `GET /api/vision/stream` for the MJPEG feed, and `GET /api/vision/status` for camera, model, detections, FPS, inference time, and frame age.
+
+The UNO Q currently delivers about 1.5–2.3 inference FPS at 640×480 (roughly 424–588 ms/model run in observed samples; browser samples showed 1.5–1.7 FPS and 777–892 ms frame age). The web page shows current measurements. Only one Uvicorn worker should run because it owns the USB camera. The page and feed have no authentication and are intended for the local demo Wi-Fi only.
+
+The `yolov8n.onnx` file comes from [unileon-robotics/YOLO8-ONNX](https://huggingface.co/unileon-robotics/YOLO8-ONNX), pinned to revision `66e5888954d3454da709847e77b36df31f756aa9`. Its model card says it is an Ultralytics YOLOv8 checkpoint exported to ONNX at 640×480, trained for 80 COCO classes, and licensed AGPL-3.0; it is not a model trained for this restaurant or for plate/food recognition. Review that license before reuse beyond this prototype. Model weights are not checked into the repo.
+
+This view is exploratory: the generic COCO model can detect labels such as person, chair, cup, bottle, and dining table, but does not include a plate class or reliably recognize table contents. It makes no meal-state claims and does not feed the service coordination API.
+
+## Existing coordination prototype
+
+The app also contains the separate deterministic service coordination prototype described below. That later milestone still uses mock plate observations and does not consume the camera detections.
 
 ## Run it
 
@@ -56,7 +84,7 @@ Unknown table/worker/task IDs return 404; invalid inputs return 422; invalid sta
 
 ## Vision boundary
 
-`backend.vision.VisionProvider` defines the normalized observation boundary. `MockVisionProvider` is the default and currently powers the observation API. `RealVisionProvider` intentionally raises `NotImplementedError`; setting `VISION_PROVIDER=real` exits with a clear error rather than pretending to process video. No model, camera, or glasses integration is included.
+`backend.vision.VisionProvider` defines the normalized observation boundary. `MockVisionProvider` is the default and currently powers the observation API. `RealVisionProvider` intentionally raises `NotImplementedError`; setting `VISION_PROVIDER=real` exits with a clear error rather than pretending to produce plate observations. The live view (`backend.live_vision`) does not send detections into this API. No glasses integration is included.
 
 `config/camera.json` records normalized image regions as `[x1, y1, x2, y2]` and `stable_observations_required: 5` for the future camera adapter. The mock API accepts each observation directly; it does not implement the five-frame stability filter. A real adapter must detect plates and apply that stability threshold before sending normalized observations to the event processor.
 

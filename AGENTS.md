@@ -1,14 +1,20 @@
 # ServiceMind prototype
 
+## Current milestone — live camera vision
+
+The active milestone is a standalone live YOLO object-detection page at `/vision` running on the Arduino UNO Q with the USB camera at `/dev/video0`. Show annotated boxes for all COCO classes and report measured inference FPS, inference time, frame age, detections, and camera/model errors. Use a small pretrained ONNX model and CPU inference with the lightest working ARM64 runtime. Video stays in memory and is not saved. This milestone does not map detections to plates, food states, requests, or tasks.
+
+The coordination prototype requirements below describe later work and must not expand this milestone. Do not claim plate or meal recognition; the generic pretrained model is for exploratory live object visualization only.
+
 ## Goal and demo scope
 
-Build a complete local prototype for the Junction demo, due Nov 15, 2026 at 10:00 Finnish time. The demo uses one shared AI brain for physical restaurant teams. This is a one-process FastAPI/Uvicorn app with SQLite, plain responsive HTML/CSS/JavaScript, relative API URLs, and one-second polling. It must run on a Linux ARM64 laptop later. No cloud service, Node runtime, LLM inference, real vision inference, or glasses integration is in scope.
+Build a complete local prototype for the Junction demo, due Nov 15, 2026 at 10:00 Finnish time. The demo uses one shared AI brain for physical restaurant teams. This is a one-process FastAPI/Uvicorn app with SQLite, plain responsive HTML/CSS/JavaScript, relative API URLs, and one-second polling. It must run on a Linux ARM64 laptop later. No cloud service, Node runtime, LLM inference, glasses integration, or task integration from vision is in scope.
 
 ## Fixed demo data and behavior
 
 - One restaurant table and two customers, with plates A and B and workers A and B.
 - Initial state: both customers are eating; worker A is busy and worker B is available; no tasks.
-- Deterministic rules only. When the first plate is reported empty, do not create a task. When the second plate is reported empty, set the table to `needs_check` and create exactly one `check_table` task offered to an available worker.
+- The later coordination milestone uses deterministic rules only. When the first plate is reported empty, do not create a task. When the second plate is reported empty, set the table to `needs_check` and create exactly one `check_table` task offered to an available worker.
 - Accept assigns the task, makes that worker busy, and sets the table to `being_served`. A dessert request creates a shared request and timestamped event. Complete makes the worker available and table `checked`; do not recreate a task while the same observation remains unchanged.
 - Decline reoffers to a different available worker. A `not_ready` correction suppresses follow-up until relevant new evidence or reset.
 - Duplicate/unchanged observations do not add events or tasks. Unknown is never treated as empty.

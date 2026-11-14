@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10251f" />
+    <title>ServiceMind · Live camera</title>
+    <link rel="stylesheet" href="/assets/vision.css" />
+    <script src="/assets/vision.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header><a class="brand" href="/vision"><span class="mark">S</span><span>servicemind<span class="dot">.</span></span></a><span class="live"><i></i> LIVE CAMERA</span></header>
+      <section class="intro"><p class="eyebrow">VISION LAB · LOCAL CAMERA</p><h1>See what the camera sees.</h1><p>Live object detection from the table camera, with annotated boxes and measured model performance.</p></section>
+      <section class="layout" aria-label="Live camera object detection">
+        <div class="feed-card"><div class="feed-top"><div><strong>Table camera</strong><span id="camera-state">Connecting to camera…</span></div><span class="source">CAMERA 0 · 640 × 480</span></div><div class="feed"><img src="/api/vision/stream" alt="Live camera feed with YOLO object detection boxes" /><div id="error" class="error" hidden></div></div><div class="legend"><span><i class="box-key"></i>Detected objects</span><span>COCO 80 class · YOLOv8n</span></div></div>
+        <aside class="stats"><div class="stat"><span>Inference speed</span><strong id="fps">—</strong><small>frames per second</small></div><div class="stat"><span>Inference time</span><strong id="inference">—</strong><small>model run on CPU</small></div><div class="stat"><span>Frame age</span><strong id="age">—</strong><small>since camera capture</small></div><div class="objects"><div class="objects-head"><strong>Detected objects</strong><span id="count">0</span></div><div id="detections" class="detection-list"><p class="muted">Waiting for first frame.</p></div></div><p class="note">Exploratory only. This general COCO model is not trained to recognize plates or assess food state.</p></aside>
+      </section>
+      <footer><span>ServiceMind · Arduino UNO Q</span><span>On-device inference · No video saved</span></footer>
+    </main>
+  </body>
+</html>
