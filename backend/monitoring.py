@@ -3,12 +3,9 @@ import time
 
 from backend.store import DomainError, Store
 
-FOOD_LABELS = {"banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake"}
-PERSON_LABEL = "person"
-
 
 class VisionMonitor:
-    """Debounce COCO food presence/disappearance before submitting plate states."""
+    """Apply a delayed banana-only heuristic to fresh camera frames."""
 
     def __init__(self, store: Store, max_frame_age: float = 2.0):
         self.store = store
@@ -23,14 +20,14 @@ class VisionMonitor:
             self.store.set_monitoring(False)
 
     def _reset_evidence(self):
-        self.evidence = {plate_id: {"candidate": None, "count": 0, "armed": False} for plate_id in ("A", "B")}
+        self.evidence = {plate_id: {"candidate": None, "since": None} for plate_id in ("A", "B")}
         self.submitted_state = {"A": "unknown", "B": "unknown"}
         self.last_frame_id = -1
         self.last_capture_at = None
 
     def _camera_gap(self):
         for evidence in self.evidence.values():
-            evidence.update(candidate=None, count=0, armed=False)
+            evidence.update(candidate=None, since=None)
         state = self.store.snapshot()
         self.submitted_state = {customer["plate_id"]: customer["food_state"] for customer in state["table"]["customers"]}
         unknown = {plate_id: "unknown" for plate_id, food_state in self.submitted_state.items() if food_state != "unknown"}
@@ -45,7 +42,7 @@ class VisionMonitor:
                 "generation": self.generation,
                 "monitoring": vision["monitoring"],
                 "regions": vision["regions"],
-                "stable_observations_required": vision["stable_observations_required"],
+                "stable_seconds": vision["stable_seconds"],
                 "started_at": self.started_at,
                 "captured_at": captured_at,
                 "frame_id": frame_id,
@@ -56,21 +53,13 @@ class VisionMonitor:
         return rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]
 
     @staticmethod
-    def _overlaps(box: tuple[float, float, float, float], rect: tuple[float, float, float, float]) -> bool:
-        return box[0] < rect[2] and box[2] > rect[0] and box[1] < rect[3] and box[3] > rect[1]
-
-    @staticmethod
     def _classify(detections: list[dict], region: list[float]) -> str:
         rect = (region[0] * 640, region[1] * 480, region[2] * 640, region[3] * 480)
         for detection in detections:
             box = detection["box"]
-            if detection["label"] in FOOD_LABELS and VisionMonitor._inside((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, rect):
+            if detection["label"] == "banana" and VisionMonitor._inside((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, rect):
                 return "food"
-        for detection in detections:
-            box = detection["box"]
-            if detection["label"] == PERSON_LABEL and VisionMonitor._overlaps(box, rect):
-                return "unknown"
-        return "absent"
+        return "empty"
 
     def consume_frame(self, context: dict, detections: list[dict]) -> bool:
         captured_at = context["captured_at"]
@@ -94,39 +83,17 @@ class VisionMonitor:
                 return False
             if self.last_capture_at is not None and captured_at - self.last_capture_at > self.max_frame_age:
                 self._camera_gap()
-                self.last_capture_at = captured_at
-                return False
             self.last_capture_at = captured_at
             observations = {}
-            required = context["stable_observations_required"]
+            stable_seconds = context["stable_seconds"]
             for plate_id, region in context["regions"].items():
                 evidence = self.evidence[plate_id]
                 detected = self._classify(detections, region)
-                if detected == "unknown":
-                    evidence.update(candidate=None, count=0)
-                    candidate = "unknown"
-                elif detected == "food":
-                    candidate = "food"
-                elif evidence["armed"]:
-                    candidate = "empty"
-                else:
-                    evidence.update(candidate=None, count=0)
-                    candidate = "unknown"
-                if candidate == "unknown":
-                    if self.submitted_state[plate_id] != "unknown":
-                        observations[plate_id] = "unknown"
-                        self.submitted_state[plate_id] = "unknown"
-                else:
-                    if evidence["candidate"] == candidate:
-                        evidence["count"] = min(required, evidence["count"] + 1)
-                    else:
-                        evidence["candidate"] = candidate
-                        evidence["count"] = 1
-                    if evidence["count"] >= required and self.submitted_state[plate_id] != candidate:
-                        observations[plate_id] = candidate
-                        self.submitted_state[plate_id] = candidate
-                    if candidate == "food" and evidence["count"] >= required:
-                        evidence["armed"] = True
+                if evidence["candidate"] != detected:
+                    evidence.update(candidate=detected, since=captured_at)
+                if captured_at - evidence["since"] >= stable_seconds and self.submitted_state[plate_id] != detected:
+                    observations[plate_id] = detected
+                    self.submitted_state[plate_id] = detected
             if observations:
                 self.store.observe_batch("1", observations, source="camera")
             return True
@@ -195,6 +162,11 @@ class VisionMonitor:
         with self.lock:
             customers = {customer["plate_id"]: customer["food_state"] for customer in self.store.snapshot()["table"]["customers"]}
             return [
-                {"plate_id": plate_id, "food_state": customers[plate_id], "stability": evidence["count"]}
+                {
+                    "plate_id": plate_id,
+                    "food_state": customers[plate_id],
+                    "candidate": evidence["candidate"],
+                    "stable_for_ms": round(max(0, time.monotonic() - evidence["since"]) * 1000) if evidence["since"] is not None else 0,
+                }
                 for plate_id, evidence in self.evidence.items()
             ]

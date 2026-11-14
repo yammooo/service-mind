@@ -10,7 +10,7 @@ CAMERA_CONFIG = json.loads((Path(__file__).resolve().parent.parent / "config" / 
 
 
 def vision_state() -> dict:
-    return {"regions": CAMERA_CONFIG["regions"], "stable_observations_required": CAMERA_CONFIG["stable_observations_required"], "monitoring": False}
+    return {"regions": CAMERA_CONFIG["regions"], "stable_seconds": CAMERA_CONFIG["stable_seconds"], "monitoring": False}
 
 
 class DomainError(Exception):
@@ -77,7 +77,8 @@ class Store:
                     state["vision"] = defaults
                 else:
                     state["vision"].setdefault("regions", defaults["regions"])
-                    state["vision"].setdefault("stable_observations_required", defaults["stable_observations_required"])
+                    state["vision"].pop("stable_observations_required", None)
+                    state["vision"].setdefault("stable_seconds", defaults["stable_seconds"])
                     state["vision"].setdefault("monitoring", False)
                 migration_events = self._migrate_open_requests(state)
                 self._save_state(db, state)
