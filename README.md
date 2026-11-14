@@ -52,9 +52,10 @@ The service runs as `arduino`, waits for networking and `/dev/video0`, and start
 sudo journalctl -u service-mind.service -f
 sudo systemctl restart service-mind.service
 sudo systemctl stop service-mind.service
+sudo systemctl poweroff
 ```
 
-`systemctl stop` stops the app without changing the SQLite state. After a code update, restart the service; the current state, regions, requests, tasks, and history stay in the database.
+`systemctl stop` stops the app without changing the SQLite state. After a code update, restart the service; the current state, regions, requests, tasks, and history stay in the database. Before removing board power, run `sudo systemctl poweroff` and wait for shutdown to finish.
 
 ## Admin and worker demo
 
