@@ -1,13 +1,15 @@
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tableAt = {1:{x:150,y:182},2:{x:362,y:182},3:{x:256,y:352},4:{x:648,y:182},5:{x:860,y:182},6:{x:754,y:352}};
+function tableApproach(id){const p=tableAt[id];return{x:p.x+68,y:p.y-34};}
 const initialPositions = {W1:{x:520,y:720,room:null},W2:{x:650,y:720,room:null},W3:{x:850,y:720,room:null}};
-const STORY_HOLD = 'Story setup: kitchen quality check';
+const STORY_HOLD = 'Guest asked: Please delay our mains';
 const STORY_ORDER = 'floor-story-order';
 const STORY_REQUEST = 'floor-story-water';
 let state = null, events = [], generation = 0, writeQueue = Promise.resolve(), refreshTimer, clockTimer, frameId;
-let playing = false, starting = false, tickBusy = false, storyStarted = false, waterSent = false, holdCleared = false;
-let positions = structuredClone(initialPositions), plans = new Map(), busyTasks = new Set(), toastTimer, lastFrame = 0;
+let playing = false, starting = false, tickBusy = false, storyStarted = false, holdReported = false, orderReady = false, waterSent = false, waterReported = false, workerBReleased = false, holdCleared = false;
+let holdSent = false, orderSent = false, waterRequestSent = false, clearSent = false, readySent = false, guestAskedAt = null, waterAskedAt = null;
+let positions = structuredClone(initialPositions), plans = new Map(), sceneMoves = new Map(), busyTasks = new Set(), storyBubble = null, toastTimer, lastFrame = 0;
 
 function clockText(seconds){seconds=Math.max(0,Number(seconds)||0);return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;}
 function announce(message){const toast=$('#toast');toast.textContent=message;toast.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.hidden=true,3500);}
@@ -35,10 +37,10 @@ function routePoints(start, target, room, targetKind){
 function routeLength(points){return points.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p.x-points[i].x,p.y-points[i].y),0);}
 function pointOnRoute(points, fraction){let distance=routeLength(points)*fraction;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],length=Math.hypot(b.x-a.x,b.y-a.y);if(distance<=length||i===points.length-1){const t=length?Math.min(1,distance/length):1;return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};}distance-=length;}return points.at(-1);}
 function routeFor(task, position){
-  const table=tableAt[task.table_id], room=routeTable(task.table_id);
-  if(task.type==='food_delivery')return{first:'kitchen',firstKind:'kitchen',destination:table,room};
-  if(task.type==='service_request')return{first:'bar',firstKind:'bar',destination:table,room};
-  return{first:null,firstKind:'table',destination:table,room};
+  const room=routeTable(task.table_id);
+  if(task.type==='food_delivery')return{first:'kitchen',firstKind:'kitchen',destination:tableApproach(task.table_id),room};
+  if(task.type==='service_request')return{first:'bar',firstKind:'bar',destination:tableApproach(task.table_id),room};
+  return{first:null,firstKind:'table',destination:tableApproach(task.table_id),room};
 }
 function makePlan(task){
   const pos=positions[task.worker_id]||{...initialPositions[task.worker_id]};
@@ -81,16 +83,27 @@ function send(path,body={},options={}){
   return operation.catch(error=>{if(token===generation&&!quiet)announce(error.message||'Simulation request failed.');return null;});
 }
 function storyEvents(){return latestRunEvents(events);}
-function detectStory(){const run=storyEvents();storyStarted=run.some(item=>item.type==='order_ready'&&item.details?.order_id===STORY_ORDER);waterSent=run.some(item=>item.type==='request_created'&&item.details?.request_id===STORY_REQUEST);holdCleared=run.some(item=>item.type==='service_hold_cleared'&&item.details?.table_id==='4'&&item.details?.worker_id==='W1');}
-function freshFloor(){return state&&state.clock_seconds===0&&state.tasks.length===0&&state.requests.length===0&&state.orders.length===0&&state.tables.every(t=>!t.hold?.active&&t.meal_state==='eating')&&state.workers.every(w=>w.availability==='available');}
+function detectStory(){
+  const run=storyEvents(),hold=run.find(item=>item.type==='service_hold_started'&&item.details?.table_id==='4'&&item.details?.reason===STORY_HOLD),order=run.find(item=>item.type==='order_ready'&&item.details?.order_id===STORY_ORDER),request=run.find(item=>item.type==='request_created'&&item.details?.request_id===STORY_REQUEST);
+  storyStarted=['W1','W2','W3'].every(id=>run.some(item=>item.type==='worker_availability_changed'&&item.details?.worker_id===id&&item.details?.availability==='busy'))||!!hold||!!order;
+  holdReported=!!hold;orderReady=!!order;waterSent=!!request;holdSent=holdReported;orderSent=orderReady;waterRequestSent=waterSent;
+  waterReported=!!request&&run.some(item=>item.id>request.id&&item.type==='worker_availability_changed'&&item.details?.worker_id==='W2'&&item.details?.availability==='available');
+  workerBReleased=!!request&&run.some(item=>item.id>request.id&&item.type==='worker_availability_changed'&&item.details?.worker_id==='W2'&&item.details?.availability==='available');
+  holdCleared=!!hold&&run.some(item=>item.id>hold.id&&item.type==='service_hold_cleared'&&item.details?.table_id==='4'&&item.details?.worker_id==='W1');
+  readySent=!!hold&&run.some(item=>item.id>hold.id&&item.type==='worker_availability_changed'&&item.details?.worker_id==='W1'&&item.details?.availability==='available');
+}
+function freshFloor(){return state&&state.tasks.length===0&&state.requests.length===0&&state.orders.length===0&&state.tables.every(t=>!t.hold?.active&&t.meal_state==='eating')&&state.workers.every(w=>w.availability==='available');}
+function startReporterVisit(){
+  const target=tableApproach(4);if(plans.has('W1')||sceneMoves.has('W1')||(positions.W1.room===2&&Math.hypot(positions.W1.x-target.x,positions.W1.y-target.y)<8))return;
+  const path=routePoints(positions.W1,tableApproach(4),2,'table');sceneMoves.set('W1',{worker:'W1',path,progress:0});
+}
 async function seedStory(token=generation){
   starting=true;syncPlayback();
   if(!state)return;
   if(!freshFloor())return;
-  const hold=await send('/api/simulation/tables/4/hold',{worker_id:'W1',source:'kitchen',reason:STORY_HOLD},{token,quiet:true});if(!hold||token!==generation)return;
-  const order=await send('/api/simulation/tables/4/order-ready',{source:'kitchen',order_id:STORY_ORDER},{token,quiet:true});if(!order||token!==generation)return;
-  storyStarted=true;waterSent=false;holdCleared=false;
-  $('#stage-caption').textContent='Kitchen order is ready at Table 4. The floor brain is waiting for an eligible worker.';
+  for(const worker of state.workers){if(worker.availability==='busy')continue;const result=await send(`/api/simulation/workers/${worker.id}/availability`,{availability:'busy'},{token,quiet:true});if(!result||token!==generation)return;}
+  storyStarted=true;startReporterVisit();
+  $('#stage-caption').textContent='Worker A is visiting Table 4 before reporting back.';
 }
 async function play(){
   if(playing||starting)return;
@@ -98,15 +111,16 @@ async function play(){
   detectStory();
   if(!storyStarted&&freshFloor())await seedStory(token);
   if(token!==generation)return;
+  detectStory();if(storyStarted&&!holdCleared)startReporterVisit();
   starting=false;detectStory();playing=true;syncPlayback();
-  $('#stage-caption').textContent=storyStarted?'Story running · scripted inputs arrive at 00:08 and 00:32; backend decisions route the work.':'Live floor running · existing simulation state is being resumed.';
+  $('#stage-caption').textContent=storyStarted?'Four-beat story running · scripted inputs and backend decisions are shown on the floor.':'Live floor running · existing simulation state is being resumed.';
   if(clockTimer)clearInterval(clockTimer);
   clockTimer=setInterval(()=>{if(!playing||tickBusy)return;tickBusy=true;const tickGen=generation;send('/api/simulation/clock/advance',{seconds:1},{token:tickGen,quiet:true,playOnly:true}).finally(()=>{if(tickGen===generation)tickBusy=false;});},1000);
 }
 function pause(){playing=false;syncPlayback();$('#stage-caption').textContent='Paused · time, scripted inputs, worker movement, and dwell are held.';}
 async function restart(){
   playing=false;starting=true;syncPlayback();generation++;const token=generation;
-  if(clockTimer)clearInterval(clockTimer);plans.clear();busyTasks.clear();positions=structuredClone(initialPositions);storyStarted=false;waterSent=false;holdCleared=false;state=null;events=[];renderRoutes();renderActors();
+  if(clockTimer)clearInterval(clockTimer);tickBusy=false;plans.clear();sceneMoves.clear();busyTasks.clear();positions=structuredClone(initialPositions);storyStarted=false;holdReported=false;orderReady=false;waterSent=false;waterReported=false;workerBReleased=false;holdCleared=false;holdSent=false;orderSent=false;waterRequestSent=false;clearSent=false;readySent=false;guestAskedAt=null;waterAskedAt=null;storyBubble=null;state=null;events=[];renderRoutes();renderActors();renderBubbles();
   const result=await send('/api/simulation/reset',{}, {token,force:true,quiet:true});
   if(token!==generation)return;
   if(!result){starting=false;syncPlayback();return;}
@@ -120,14 +134,22 @@ async function restart(){
 function syncPlayback(){
   $('#play').disabled=playing||starting;$('#pause').disabled=!playing;$('#restart').disabled=starting;
   $('#run-state').textContent=starting?'Preparing':playing?'Playing':'Paused';
-  if(starting){$('#selected-table').disabled=true;$('#hold-table').disabled=true;$('#clear-hold').disabled=true;$('#request-water').disabled=true;document.querySelectorAll('[data-worker-action]').forEach(button=>button.disabled=true);}
+  $('#hold-table').disabled=starting;$('#clear-hold').disabled=starting||!tableFor('4')?.hold?.active;
 }
 function runScript(){
   if(!playing||!storyStarted||!state)return;
   const elapsed=state.clock_seconds,runGeneration=generation;
-  if(elapsed>=8&&!waterSent){waterSent=true;send(`/api/simulation/tables/2/requests`,{request_type:'water',request_id:STORY_REQUEST},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)waterSent=false;});$('#stage-caption').textContent='Table 2 asked for water. Dispatch is choosing a worker from the live floor state.';}
-  if(elapsed>=32&&!holdCleared){holdCleared=true;const table=tableFor('4'),hold=table?.hold;if(hold?.active&&hold.worker_id==='W1'&&hold.reason===STORY_HOLD){send('/api/simulation/tables/4/hold/clear',{worker_id:'W1'},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)holdCleared=false;});$('#stage-caption').textContent='The story clears its own Table 4 hold. The kitchen delivery is eligible for dispatch.';}else if(hold?.active){$('#stage-caption').textContent='A manually changed hold remains in place. Clear it explicitly when ready.';}}
-  if(elapsed>=70&&!state.tasks.some(active)){playing=false;syncPlayback();$('#stage-caption').textContent='Story complete · all work finished through backend task completion.';}
+  const approach=tableApproach(4),atTable4=positions.W1.room===2&&Math.hypot(positions.W1.x-approach.x,positions.W1.y-approach.y)<8;
+  if(elapsed>=10&&atTable4&&!guestAskedAt){guestAskedAt=elapsed;storyBubble={source:'table',table:'4',label:'GUEST · TABLE 4',text:'Please delay our mains.',until:elapsed+4};}
+  if(guestAskedAt!==null&&elapsed>=guestAskedAt+3&&!holdReported&&!holdSent){holdSent=true;storyBubble={source:'worker',worker:'W1',label:'WORKER A · SIMULATED GLASSES',text:'Table 4 asked us to wait.',until:elapsed+5};send('/api/simulation/tables/4/hold',{worker_id:'W1',source:'kitchen',reason:STORY_HOLD},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)holdSent=false;});$('#stage-caption').textContent='Worker A reported the guest request. The backend has placed a Table 4 hold.';}
+  if(holdReported&&elapsed>=20&&!orderReady&&!orderSent){orderSent=true;storyBubble={source:'kitchen',label:'KITCHEN',text:'Table 4 order ready.',until:elapsed+6};send('/api/simulation/tables/4/order-ready',{source:'kitchen',order_id:STORY_ORDER},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)orderSent=false;});$('#stage-caption').textContent='Kitchen reports Table 4 ready. The backend decides whether it can be routed.';}
+  if(orderReady&&elapsed>=30&&!waterSent&&!waterRequestSent){waterRequestSent=true;waterAskedAt=elapsed;storyBubble={source:'table',table:'2',label:'GUEST · TABLE 2',text:'Could we have some water?',until:elapsed+4};send('/api/simulation/tables/2/requests',{request_type:'water',request_id:STORY_REQUEST},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)waterRequestSent=false;});}
+  if(waterSent&&waterAskedAt===null)waterAskedAt=Math.max(0,elapsed-3);
+  if(waterSent&&waterAskedAt!==null&&elapsed>=waterAskedAt+3&&!waterReported){waterReported=true;storyBubble={source:'worker',worker:'W1',label:'WORKER A · SIMULATED GLASSES',text:'Table 2 asked us for water.',until:elapsed+5};$('#stage-caption').textContent='Worker A reports Table 2 water. Worker B becomes available; the backend routes the request.';send('/api/simulation/workers/W2/availability',{availability:'available'},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)waterReported=false;});}
+  if(waterReported&&workerBReleased&&!holdCleared&&elapsed>=40){const hold=tableFor('4')?.hold;if(hold?.active){if(hold.reason===STORY_HOLD&&hold.worker_id==='W1'&&!clearSent){clearSent=true;storyBubble={source:'worker',worker:'W1',label:'WORKER A · SIMULATED GLASSES',text:'Table 4 ready now.',until:elapsed+5};$('#stage-caption').textContent='Worker A reports Table 4 ready. The original story hold is cleared.';send('/api/simulation/tables/4/hold/clear',{worker_id:'W1'},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)clearSent=false;});}else $('#stage-caption').textContent='Manual Table 4 hold remains active. Clear it explicitly to continue.';}else if(!clearSent){clearSent=true;storyBubble={source:'worker',worker:'W1',label:'WORKER A · SIMULATED GLASSES',text:'Table 4 ready now.',until:elapsed+5};$('#stage-caption').textContent='Table 4 is clear. Worker A is available for live backend dispatch.';}}
+  if(holdCleared&&!readySent){readySent=true;send('/api/simulation/workers/W1/availability',{availability:'available'},{quiet:true,playOnly:true}).then(result=>{if(!result&&generation===runGeneration)readySent=false;});}
+  const order=state.orders.find(item=>item.id===STORY_ORDER),water=state.requests.find(item=>item.id===STORY_REQUEST);
+  if(elapsed>=60&&order?.status==='delivered'&&water?.status==='fulfilled'){playing=false;syncPlayback();$('#stage-caption').textContent='Story complete · both backend tasks were completed at their tables.';}
 }
 function reconcile(){
   detectStory();runScript();
@@ -167,36 +189,32 @@ function advancePlan(plan,dt){
     plan.completionSent=true;send(`/api/simulation/tasks/${encodeURIComponent(task.id)}/complete`,{worker_id:plan.worker},{quiet:true,playOnly:true}).then(result=>{if(!result){plan.completionSent=false;plan.blocked=true;plan.resumeStage='table-dwell';plan.stage='blocked';}});return;
   }
   if(plan.stage!=='to-source'&&plan.stage!=='to-table')return;
-  const length=Math.max(1,routeLength(plan.path));plan.progress=Math.min(1,plan.progress+dt/(length/54));
+  const length=Math.max(1,routeLength(plan.path));plan.progress=Math.min(1,plan.progress+dt/(length/80));
   const point=pointOnRoute(plan.path,plan.progress);positions[plan.worker]={...positions[plan.worker],x:point.x,y:point.y};
   if(plan.progress>=1){
     if(plan.stage==='to-source'){plan.stage='source-dwell';plan.dwell=1.1;positions[plan.worker].room=null;}
     else{plan.stage='table-dwell';plan.dwell=1.25;positions[plan.worker].room=plan.room;}
   }
 }
+function advanceScene(dt){
+  if(!playing)return;
+  for(const [worker,move] of sceneMoves){move.progress=Math.min(1,move.progress+dt/(Math.max(1,routeLength(move.path))/80));const point=pointOnRoute(move.path,move.progress);positions[worker]={...positions[worker],...point};if(move.progress>=1){positions[worker].room=2;sceneMoves.delete(worker);}}
+}
 function animate(now){
   const dt=lastFrame?Math.min(.12,(now-lastFrame)/1000):0;lastFrame=now;
-  if(playing){for(const plan of plans.values())advancePlan(plan,dt);}
+  if(playing){advanceScene(dt);for(const plan of plans.values())advancePlan(plan,dt);}
   renderActors();renderBubbles();frameId=requestAnimationFrame(animate);
 }
 function svgTable(table){
-  const point=tableAt[table.id],hold=table.hold?.active,activeTask=state.tasks.find(t=>String(t.table_id)===String(table.id)&&active(t));
-  const status=hold?'HOLD':activeTask?({food_delivery:'ORDER READY',service_request:`${nice(activeTask.request_type||'request').toUpperCase()} REQUEST`,check_table:'CHECK TABLE'}[activeTask.type]):nice(table.status).toUpperCase();
-  const selected=String($('#selected-table').value)===String(table.id),highlight=!!hold||!!activeTask;
-  return `<g class="table-unit ${selected?'selected':''} ${highlight?'highlight':''}" data-table="${esc(table.id)}" role="button" tabindex="0" aria-label="Select Table ${esc(table.id)}, ${esc(status)}"><title>Table ${esc(table.id)} · ${esc(nice(table.status))}${hold?' · service hold active':''}</title><circle class="guest-token" cx="${point.x-36}" cy="${point.y-27}" r="15"><title>Guest</title></circle><path class="guest-token-path" d="M${point.x-36} ${point.y-21}v10m-8-7q8-8 16 0"/><circle class="guest-token" cx="${point.x+36}" cy="${point.y+28}" r="15"><title>Guest</title></circle><path class="guest-token-path" d="M${point.x+36} ${point.y+34}v10m-8-7q8-8 16 0"/><rect class="table-top" x="${point.x-48}" y="${point.y-31}" width="96" height="62" rx="17"/><ellipse class="table-plate" cx="${point.x}" cy="${point.y}" rx="19" ry="15"/><text class="table-id" x="${point.x}" y="${point.y-2}">T${esc(table.id)}</text><text class="table-status" x="${point.x}" y="${point.y+51}">${esc(status)}</text></g>`;
+  const point=tableAt[table.id],hold=table.hold?.active;
+  const request=state.requests.find(item=>item.table_id===String(table.id)&&item.id===STORY_REQUEST),order=state.orders.find(item=>item.table_id===String(table.id)&&item.id===STORY_ORDER),foodTask=state.tasks.find(item=>item.order_id===STORY_ORDER&&active(item));
+  let status='';if(table.id==='4'){status=order?.status==='delivered'?'DELIVERED':foodTask?.status==='assigned'?'EN ROUTE':foodTask?.status==='offered'?`OFFER ${foodTask.offered_to}`:hold&&order?'HELD · READY':hold?'HELD':order?'READY':'';}else if(table.id==='2'){const task=state.tasks.find(item=>item.request_id===STORY_REQUEST&&active(item));status=request?.status==='fulfilled'?'WATER SERVED':task?.status==='assigned'?'WATER MOVING':task?.status==='offered'?`WATER · ${task.offered_to}`:request?'WATER ASKED':'';}
+  const highlight=!!status||!!hold;
+  return `<g class="table-unit ${highlight?'highlight':''}" aria-label="Table ${esc(table.id)}${status?`, ${esc(status)}`:''}"><title>Table ${esc(table.id)}${status?` · ${esc(status)}`:''}</title><circle class="guest-token" cx="${point.x-36}" cy="${point.y-27}" r="15"><title>Guest</title></circle><path class="guest-token-path" d="M${point.x-36} ${point.y-21}v10m-8-7q8-8 16 0"/><circle class="guest-token" cx="${point.x+36}" cy="${point.y+28}" r="15"><title>Guest</title></circle><path class="guest-token-path" d="M${point.x+36} ${point.y+34}v10m-8-7q8-8 16 0"/><rect class="table-top" x="${point.x-48}" y="${point.y-31}" width="96" height="62" rx="17"/><ellipse class="table-plate" cx="${point.x}" cy="${point.y}" rx="19" ry="15"/><text class="table-id" x="${point.x}" y="${point.y-2}">T${esc(table.id)}</text>${status?`<text class="table-status" x="${point.x}" y="${point.y+51}">${esc(status)}</text>`:''}</g>`;
 }
 function renderTables(){
   const items=state?.tables||[];$('#table-layer').innerHTML=items.map(svgTable).join('');
-  const table=tableFor($('#selected-table').value),hold=table?.hold;$('#selected-table').disabled=starting;$('#hold-table').disabled=starting;$('#request-water').disabled=starting;$('#clear-hold').disabled=starting||!hold?.active;
-  $('#hold-table').textContent=hold?.active?'Update hold':'Place hold';
-}
-function renderWorkers(){
-  if(!state)return;
-  $('#worker-controls').innerHTML=state.workers.map(worker=>{
-    const task=state.tasks.find(item=>item.status==='assigned'&&item.worker_id===worker.id);
-    const action=worker.availability==='available'?'Set unavailable':'Set available';
-    return `<div class="worker-control-row"><span>${esc(worker.id)} · ${esc(nice(worker.availability))}${task?' · assigned':''}</span><span><button type="button" data-worker-action="availability" data-id="${esc(worker.id)}" data-value="${worker.availability==='available'?'busy':'available'}" ${starting||task?'disabled':''}>${task?'On task':action}</button>${task?` <button type="button" data-worker-action="release" data-id="${esc(worker.id)}" data-task="${esc(task.id)}" ${starting?'disabled':''}>Release task</button>`:''}</span></div>`;
-  }).join('');
+  const hold=tableFor('4')?.hold;$('#hold-table').disabled=starting;$('#clear-hold').disabled=starting||!hold?.active;$('#hold-table').textContent=hold?.active?'Change to manual hold':'Set manual hold';
 }
 function renderActors(){
   const layer=$('#worker-layer');if(!layer)return;
@@ -205,66 +223,68 @@ function renderActors(){
 }
 function renderRoutes(){
   const layer=$('#route-layer');if(!layer)return;
-  layer.innerHTML=[...plans.values()].filter(plan=>plan.path?.length>1).map(plan=>`<path class="route-path ${plan.blocked?'blocked':''} ${playing?'':'paused'}" d="${plan.path.map((p,i)=>`${i?'L':'M'}${p.x} ${p.y}`).join(' ')}" />`).join('');
+  const taskPaths=[...plans.values()].filter(plan=>plan.path?.length>1).map(plan=>`<path class="route-path ${plan.blocked?'blocked':''} ${playing?'':'paused'}" d="${plan.path.map((p,i)=>`${i?'L':'M'}${p.x} ${p.y}`).join(' ')}" />`);
+  const visitPaths=[...sceneMoves.values()].filter(move=>move.path?.length>1).map(move=>`<path class="route-path story-visit ${playing?'':'paused'}" d="${move.path.map((p,i)=>`${i?'L':'M'}${p.x} ${p.y}`).join(' ')}" />`);layer.innerHTML=[...visitPaths,...taskPaths].join('');
 }
 function renderActorsAndRoutes(){renderRoutes();renderActors();}
 function renderBubbles(){
   const layer=$('#bubble-layer');if(!layer)return;
+  const bubbles=[];
+  if(storyBubble&&state&&state.clock_seconds<=storyBubble.until){let x=30,y=100;if(storyBubble.source==='table'){const p=tableAt[storyBubble.table];x=Math.max(24,Math.min(720,p.x-128));y=Math.max(108,p.y-96);}else if(storyBubble.source==='worker'){const p=positions[storyBubble.worker];x=Math.max(20,Math.min(720,p.x-120));y=Math.max(110,p.y-105);}else{x=18;y=500;}
+    bubbles.push(`<g class="speech-bubble story-bubble" transform="translate(${x} ${y})"><rect width="260" height="54" rx="11"/><path d="M56 53l8 10 11-10"/><text x="11" y="19">${esc(storyBubble.label)}</text><text x="11" y="40">${esc(storyBubble.text)}</text></g>`);}
   const plan=[...plans.values()].find(item=>item.stage==='to-source'||item.stage==='to-table'||item.stage==='blocked'||item.stage==='source-dwell'||item.stage==='table-dwell');
-  if(!plan){layer.innerHTML='';return;}
-  const p=positions[plan.worker],copy=actorMessage(plan).slice(0,37),x=Math.max(15,Math.min(765,p.x-65)),y=Math.max(112,p.y-85);
-  layer.innerHTML=`<g class="speech-bubble" transform="translate(${x} ${y})"><rect width="220" height="45" rx="11"/><path d="M62 44l8 10 11-10"/><text x="11" y="18">To glasses / phone · ${esc(plan.worker)}</text><text x="11" y="36">${esc(copy)}</text></g>`;
+  if(plan){const p=positions[plan.worker],copy=actorMessage(plan).slice(0,37),x=Math.max(15,Math.min(765,p.x-65)),y=Math.max(112,p.y-85);bubbles.push(`<g class="speech-bubble actor-bubble" transform="translate(${x} ${y})"><rect width="220" height="45" rx="11"/><path d="M62 44l8 10 11-10"/><text x="11" y="18">Simulated glasses · ${esc(plan.worker)}</text><text x="11" y="36">${esc(copy)}</text></g>`);}
+  layer.innerHTML=bubbles.join('');
 }
 function captionFor(item){
   const d=item.details||{},worker=d.worker_id||'Worker',table=d.table_id?`Table ${d.table_id}`:'';
-  if(item.type==='task_offered')return{label:'Brain · dispatch',text:`Offer to ${worker}: ${item.message}`};
+  if(item.type==='task_offered')return{label:'Brain · dispatch',text:`Offer to ${worker}: ${d.reason||item.message}`};
   if(item.type==='routing_decision')return{label:'Brain · waiting',text:item.message};
   if(item.type==='task_accepted')return{label:`${worker} · simulated glasses / phone`,text:`Accepting ${nice(d.task_type||'task')} ${table}.`};
   if(item.type==='task_hold_conflict')return{label:`${worker} · simulated glasses / phone`,text:`${table} is held. Pausing here and acknowledging the conflict.`};
   if(item.type==='task_conflict_acknowledged')return{label:`${worker} · simulated glasses / phone`,text:`Conflict acknowledged. Waiting for the hold to clear.`};
+  if(item.type==='service_hold_started'&&d.reason===STORY_HOLD)return{label:'Guest · Table 4',text:'“Please delay our mains.” · Worker A reports: “Table 4 asked us to wait.”'};
+  if(item.type==='order_ready'&&d.order_id===STORY_ORDER)return{label:'Kitchen',text:'Table 4 order ready.'};
+  if(item.type==='request_created'&&d.request_id===STORY_REQUEST)return{label:'Guest · Table 2',text:'“Could we have some water?” · Worker A reports the request.'};
+  if(item.type==='service_hold_cleared'&&d.table_id==='4'&&d.worker_id==='W1')return{label:'Worker A · simulated glasses / phone',text:'“Table 4 ready now.” The hold is cleared.'};
   if(item.type==='service_hold_started'||item.type==='service_hold_updated')return{label:`${worker} · simulated glasses / phone`,text:`${table} is blocked: ${d.reason||'service hold'}.`};
   if(item.type==='service_hold_cleared')return{label:`${worker} · simulated glasses / phone`,text:`${table} hold cleared. The blocked delivery can continue.`};
-  if(item.type==='task_completed'||item.type==='order_delivered'||item.type==='request_fulfilled')return{label:`${worker} · simulated glasses / phone`,text:item.message};
-  return{label:item.type?.replaceAll('_',' ')||'Floor event',text:item.message||'Simulation event'};
+  if(item.type==='task_completed')return d.order_id||d.request_id?null:{label:`${worker} · simulated glasses / phone`,text:item.message};
+  if(item.type==='order_delivered'||item.type==='request_fulfilled')return{label:'Backend · completed',text:item.message};
+  return null;
 }
 function renderCaptions(){
-  const current=storyEvents().filter(item=>!['clock_advanced','simulation_reset','order_delivered','request_fulfilled'].includes(item.type)).slice(-6).reverse().map(item=>{const caption=captionFor(item);return`<li><strong>${esc(caption.label)}</strong>${esc(caption.text)}</li>`;});
+  const current=storyEvents().slice().reverse().map(captionFor).filter(Boolean).slice(0,8).map(caption=>`<li><strong>${esc(caption.label)}</strong>${esc(caption.text)}</li>`);
   $('#caption-feed').innerHTML=current.join('')||'<li class="caption-empty">Captions appear from actual task and event messages.</li>';
 }
 function renderBrain(){
   if(!state)return;
   const assigned=state.tasks.filter(item=>item.status==='assigned').at(-1),offered=state.tasks.find(item=>item.status==='offered'),pending=state.tasks.find(item=>item.status==='pending');
   const activeTask=assigned||offered||pending;
+  const completed=state.orders.some(item=>item.id===STORY_ORDER&&item.status==='delivered')&&state.requests.some(item=>item.id===STORY_REQUEST&&item.status==='fulfilled');
   if(assigned){const plan=plans.get(assigned.worker_id);$('#brain-message').textContent=plan?.blocked?`${assigned.worker_id} is stopped at Table ${assigned.table_id}. The task remains assigned until the hold clears.`:`${assigned.worker_id} is ${plan?actorMessage(plan).toLowerCase():'assigned to '+taskName(assigned)}.`;$('#decision-meta').textContent=assigned.decision_reason||`Backend assigned ${taskName(assigned)} to ${assigned.worker_id}.`;$('#active-instruction').textContent=`${assigned.worker_id} · ${taskName(assigned)}`;}
   else if(offered){$('#brain-message').textContent=`Offer to ${offered.offered_to}: ${offered.decision_reason||taskName(offered)}.`;$('#decision-meta').textContent=`Live dispatch · ${taskName(offered)} · ${clockText(offered.wait_seconds)} eligible wait`;$('#active-instruction').textContent=`Offer · ${taskName(offered)}`;}
   else if(pending){$('#brain-message').textContent=pending.decision_reason||`Waiting to route ${taskName(pending)}.`;$('#decision-meta').textContent=`Pending · ${taskName(pending)} · ${clockText(pending.wait_seconds)} eligible wait`;$('#active-instruction').textContent=`Waiting · ${taskName(pending)}`;}
-  else{$('#brain-message').textContent=storyStarted&&playing?'No active tasks. Waiting for the next scripted input.':'Waiting for simulated floor events.';$('#decision-meta').textContent='Backend task routing is the source of every assignment.';$('#active-instruction').textContent='No active task';}
+  else if(completed){$('#brain-message').textContent='Table 4 delivered. Table 2 water served.';$('#decision-meta').textContent='Both tasks were completed through live backend dispatch.';$('#active-instruction').textContent='Story complete · 2 tasks done';}
+  else{$('#brain-message').textContent=storyStarted&&playing?'No active tasks. Waiting for the next story event.':'Waiting for simulated floor events.';$('#decision-meta').textContent='Backend task routing is the source of every assignment.';$('#active-instruction').textContent='No active task';}
+  const beat=holdCleared?4:workerBReleased?3:orderReady?2:1;$('#beat-count').textContent=`${beat} / 4`;$('#beat-title').textContent=[holdReported?'Worker A reports the Table 4 delay':'Worker A visits Table 4','Kitchen ready · hold blocks delivery','Worker A reports Table 2 water · B is dispatched',completed?'Table 4 delivered · water served':'Worker A clears the hold · delivery moves'][beat-1];
 }
 function render(){
   if(!state)return;
-  $('#floor-clock').textContent=clockText(state.clock_seconds);renderTables();renderWorkers();renderActorsAndRoutes();renderBubbles();renderCaptions();renderBrain();
-  const kitchen=state.orders.filter(item=>item.source==='kitchen'&&item.status==='ready').length,bar=state.orders.filter(item=>item.source==='bar'&&item.status==='ready').length;
-  $('#kitchen-state').textContent=kitchen?`${kitchen} ready ${kitchen===1?'order':'orders'}`:'Ready orders';$('#bar-state').textContent=bar?`${bar} ready`:'Water · dessert';
+  $('#floor-clock').textContent=clockText(state.clock_seconds);renderTables();renderActorsAndRoutes();renderBubbles();renderCaptions();renderBrain();
+  const order=state.orders.find(item=>item.id===STORY_ORDER),waterTask=state.tasks.some(item=>item.request_id===STORY_REQUEST&&active(item));
+  $('#kitchen-state').textContent=order?.status==='ready'?'Table 4 order ready':order?.status==='delivered'?'Table 4 delivered':'Waiting for ticket';$('#bar-state').textContent=waterTask?'Table 2 water pickup':'Water pickup';
 }
-function selectTable(id){if(!tableAt[id])return;$('#selected-table').value=String(id);renderTables();}
 async function inputAction(action){
   if(!state)return;
-  const id=$('#selected-table').value,table=tableFor(id);
+  const table=tableFor('4');
   if(action==='hold'){
-    const existing=table?.hold?.active;const body={worker_id:existing?table.hold.worker_id:'W1',source:existing?table.hold.source:'kitchen',reason:existing?table.hold.reason:'Manual floor hold'};
-    await send(`/api/simulation/tables/${encodeURIComponent(id)}/hold`,body);return;
+    await send('/api/simulation/tables/4/hold',{worker_id:table?.hold?.active?table.hold.worker_id:'W1',source:'kitchen',reason:'Manual floor hold'});return;
   }
   if(action==='clear'){
-    if(table?.hold?.active)await send(`/api/simulation/tables/${encodeURIComponent(id)}/hold/clear`,{worker_id:table.hold.worker_id});return;
+    if(table?.hold?.active)await send('/api/simulation/tables/4/hold/clear',{worker_id:table.hold.worker_id});return;
   }
-  if(action==='water')await send(`/api/simulation/tables/${encodeURIComponent(id)}/requests`,{request_type:'water'});
 }
-document.addEventListener('click',event=>{
-  const table=event.target.closest('[data-table]');if(table){selectTable(table.dataset.table);return;}
-  const workerButton=event.target.closest('[data-worker-action]');if(workerButton){const id=encodeURIComponent(workerButton.dataset.id);if(workerButton.dataset.workerAction==='release')send(`/api/simulation/tasks/${encodeURIComponent(workerButton.dataset.task)}/release`,{worker_id:workerButton.dataset.id});else send(`/api/simulation/workers/${id}/availability`,{availability:workerButton.dataset.value});return;}
-});
-document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-table]')){event.preventDefault();selectTable(event.target.dataset.table);}});
 $('#play').addEventListener('click',play);$('#pause').addEventListener('click',pause);$('#restart').addEventListener('click',restart);
-$('#selected-table').addEventListener('change',()=>renderTables());
-$('#hold-table').addEventListener('click',()=>inputAction('hold'));$('#clear-hold').addEventListener('click',()=>inputAction('clear'));$('#request-water').addEventListener('click',()=>inputAction('water'));
+$('#hold-table').addEventListener('click',()=>inputAction('hold'));$('#clear-hold').addEventListener('click',()=>inputAction('clear'));
 refresh();refreshTimer=setInterval(()=>refresh(),800);frameId=requestAnimationFrame(animate);

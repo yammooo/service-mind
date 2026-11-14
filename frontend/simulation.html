@@ -19,13 +19,14 @@
 
     <main>
       <section class="story-header">
-        <div class="story-title"><p class="eyebrow">FLOOR COORDINATION · SIMULATED INPUTS</p><h1>One floor. One shared picture.</h1><p>Watch the real dispatch rules respond to a blocked kitchen order and a guest request.</p></div>
+        <div class="story-title"><p class="eyebrow">FOUR BEATS · TABLE 4 DELAY</p><h1>Hold the Table 4 mains.</h1></div>
         <div class="playback" aria-label="Story controls"><button id="play" class="play-button" type="button"><span aria-hidden="true">▶</span> Play story</button><button id="pause" class="pause-button" type="button" disabled>Pause</button><button id="restart" class="restart-button" type="button">Restart</button><div class="clock-readout"><span id="run-state">Paused</span><strong id="floor-clock">00:00</strong></div></div>
       </section>
+      <div class="beat-indicator" aria-live="polite"><span id="beat-count">1 / 4</span><strong id="beat-title">Worker A visits Table 4</strong></div>
 
       <section class="simulation-layout">
         <div class="floor-stage panel">
-          <div class="stage-heading"><div><span class="stage-kicker">SERVICE FLOOR</span><strong>Two rooms · six tables · three workers</strong></div><div class="legend"><span><i class="legend-worker"></i> Worker</span><span><i class="legend-guest"></i> Guest</span><span><i class="legend-route"></i> Route</span></div></div>
+          <div class="stage-heading"><div><span class="stage-kicker">SERVICE FLOOR</span><strong>Table 4 order · Table 2 water</strong></div><div class="legend"><span><i class="legend-worker"></i> Worker</span><span><i class="legend-guest"></i> Guest</span><span><i class="legend-route"></i> Route</span></div></div>
           <div class="floor-scroll">
             <svg id="floor-map" viewBox="0 0 1000 820" role="group" aria-label="Top-down restaurant floor plan with two dining rooms, kitchen, bar, and three workers">
               <defs>
@@ -68,7 +69,7 @@
               <g id="worker-layer"></g>
             </svg>
           </div>
-          <div class="stage-foot"><span id="stage-caption">The floor is paused. Play to run the repeatable 60–90 second story.</span><span class="sim-label">Illustrative actors · no real camera input</span></div>
+          <div class="stage-foot"><span id="stage-caption">The floor is paused. Play the four-beat Table 4 story.</span><span class="sim-label">Illustrative actors · no real camera input</span></div>
         </div>
 
         <aside class="story-side">
@@ -81,17 +82,14 @@
           </section>
 
           <section class="controls-panel panel" aria-labelledby="controls-heading">
-            <div class="side-heading"><div><span class="stage-kicker">YOU CAN STEER</span><h2 id="controls-heading">Floor controls</h2></div><span id="connection" class="connection"><i></i> Connecting</span></div>
-            <label class="field-label" for="selected-table">Selected table</label><select id="selected-table"><option value="1">Table 1 · Room 1</option><option value="2">Table 2 · Room 1</option><option value="3">Table 3 · Room 1</option><option value="4" selected>Table 4 · Room 2</option><option value="5">Table 5 · Room 2</option><option value="6">Table 6 · Room 2</option></select>
-            <div class="control-row"><button id="hold-table" class="control-button hold-control" type="button">Hold table</button><button id="clear-hold" class="control-button" type="button" disabled>Clear hold</button></div>
-            <button id="request-water" class="control-button water-control" type="button">Request water</button>
-            <details class="inspector"><summary>Worker availability · manual inspector</summary><div id="worker-controls" class="worker-controls"></div></details>
-            <p class="control-note">Pause freezes simulated time, scripted inputs, and movement. Controls stay live while paused.</p>
+            <div class="side-heading"><div><span class="stage-kicker">ONE MANUAL OVERRIDE</span><h2 id="controls-heading">Table 4 hold</h2></div><span id="connection" class="connection"><i></i> Connecting</span></div>
+            <div class="control-row"><button id="hold-table" class="control-button hold-control" type="button">Set manual hold</button><button id="clear-hold" class="control-button" type="button" disabled>Clear hold</button></div>
+            <p class="control-note">A manual hold stays until you clear it. Pause freezes time, scripted inputs, and movement.</p>
           </section>
 
           <section class="caption-panel panel" aria-labelledby="caption-heading">
-            <div class="side-heading"><div><span class="stage-kicker">SIMULATED GLASSES / PHONE</span><h2 id="caption-heading">What the team hears</h2></div><span class="caption-mark">TXT</span></div>
-            <ol id="caption-feed" class="caption-feed"><li class="caption-empty">Captions appear from actual task and event messages.</li></ol>
+            <div class="side-heading"><div><span class="stage-kicker">SIMULATED GUEST + WAITER MESSAGES</span><h2 id="caption-heading">Floor messages</h2></div><span class="caption-mark">TXT</span></div>
+            <ol id="caption-feed" class="caption-feed"><li class="caption-empty">Messages and dispatch reasons appear here.</li></ol>
           </section>
         </aside>
       </section>
