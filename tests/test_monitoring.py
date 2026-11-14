@@ -83,6 +83,15 @@ class VisionMonitorTests(unittest.TestCase):
         self.assertEqual(state["table"]["customers"][0]["food_state"], "unknown")
         self.assertEqual(state["tasks"], [])
 
+    def test_in_region_food_wins_over_overlapping_person_box(self):
+        detections = FOOD + [{"label": "person", "confidence": 0.9, "box": [0, 0, 640, 480]}]
+        self.monitor.start()
+        for frame_id in range(1, 6):
+            self.frame(frame_id, detections)
+        state = self.store.snapshot()
+        self.assertEqual([customer["food_state"] for customer in state["table"]["customers"]], ["food", "food"])
+        self.assertEqual(state["tasks"], [])
+
     def test_pause_and_reset_discard_inflight_frames(self):
         self.monitor.start()
         context = self.monitor.begin_frame(time.monotonic(), 1)

@@ -64,12 +64,12 @@ class VisionMonitor:
         rect = (region[0] * 640, region[1] * 480, region[2] * 640, region[3] * 480)
         for detection in detections:
             box = detection["box"]
-            if detection["label"] == PERSON_LABEL and VisionMonitor._overlaps(box, rect):
-                return "unknown"
-        for detection in detections:
-            box = detection["box"]
             if detection["label"] in FOOD_LABELS and VisionMonitor._inside((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, rect):
                 return "food"
+        for detection in detections:
+            box = detection["box"]
+            if detection["label"] == PERSON_LABEL and VisionMonitor._overlaps(box, rect):
+                return "unknown"
         return "absent"
 
     def consume_frame(self, context: dict, detections: list[dict]) -> bool:
