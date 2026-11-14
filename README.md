@@ -65,6 +65,28 @@ The initial world has two customers eating, Worker A busy, Worker B available, a
 
 This is an exploratory heuristic, not reliable plate recognition. The generic model has no plate class and can miss or misclassify bananas; other foods are intentionally ignored. Fixed camera placement and suitable lighting are required. Do not use its inferred state as a safety-critical or operational guarantee.
 
+## Laptop task announcer
+
+On the laptop paired with the glasses, install `espeak-ng`, `pactl`, and `paplay`, then start the standard-library announcer from the repository root while on the demo Wi-Fi:
+
+```bash
+SERVICE_MIND_ROOT="$(pwd)"
+systemd-run --user --unit=service-mind-announcer.service --collect \
+  --property=Restart=on-failure --property=RestartSec=3 \
+  --property="WorkingDirectory=$SERVICE_MIND_ROOT" \
+  --setenv=SERVICE_MIND_URL=http://10.0.41.164:7000 \
+  --setenv=ANNOUNCER_WORKER=B \
+  --setenv=GLASSES_BLUETOOTH_ADDRESS=98:59:49:E9:64:F1 \
+  /usr/bin/python3 -u "$SERVICE_MIND_ROOT/scripts/task_announcer.py"
+systemctl --user status service-mind-announcer.service
+```
+
+Stop it with `systemctl --user stop service-mind-announcer.service`. It restarts after failures during the current user-manager session and is not enabled to start automatically at login.
+
+The laptop checks once per second for tasks currently offered to Worker B and speaks each offer once. Table checks and dessert/water requests use fixed phrases. The glasses must be an active, unmuted PipeWire/WirePlumber sink. The announcer matches its Bluetooth address from sink properties and sends speech only to that named sink, with PipeWire stream properties that prevent fallback or movement to laptop speakers. It does not use a microphone or save recordings; generated WAV files are temporary. The admin page shows whether the announcer is online and the matching sink is connected, with a **Test audio** button for a fixed phrase. A connected sink does not prove the wearer heard the sound.
+
+The announcer heartbeat is held in memory by the existing FastAPI process and expires after 15 seconds. Test requests are single-pending and expire after 30 seconds. No SQLite state or audit events are added for audio status.
+
 ## API
 
 All paths are relative to the current host. `GET /api/state` returns shared table, customer, worker, task, request, and vision-monitor state. `GET /api/events` returns chronological audit history. Mutations and their events are committed together in SQLite transactions.
@@ -73,6 +95,9 @@ All paths are relative to the current host. `GET /api/state` returns shared tabl
 | --- | --- |
 | `GET /api/vision/status` | Camera, model, detection boxes/labels/confidence, FPS, inference time, frame age, monitor state |
 | `GET /api/vision/stream` | Annotated MJPEG feed |
+| `GET /api/announcer/status` | Laptop heartbeat, configured worker, glasses sink connection/mute, last playback, and last error |
+| `POST /api/announcer/heartbeat` | Laptop-only ephemeral status update; the supported script sends it automatically |
+| `POST /api/announcer/test` | Queue the fixed glasses test phrase from the admin button |
 | `POST /api/vision/regions` | `{"regions":{"A":[0.05,0.15,0.45,0.85],"B":[0.55,0.15,0.95,0.85]}}`; validates and saves both regions, pauses monitor |
 | `POST /api/vision/start` / `pause` | Begin fresh observation window (requires a healthy, fresh camera frame) / pause state observations |
 | `POST /api/observations` | Explicit mock observation: `{"table_id":"1","plate_id":"A","food_state":"empty"}` |
