@@ -9,16 +9,24 @@
   <script src="/assets/worker.js" defer></script>
 </head>
 <body>
-<div class="app-shell worker-shell">
-  <header class="topbar"><a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>servicemind<span class="brand-dot">.</span></span></a><nav class="view-switch" aria-label="Choose a view"><a href="/admin">Admin</a><a id="worker-a-link" href="/worker/A">Worker A</a><a id="worker-b-link" href="/worker/B">Worker B</a></nav></header>
-  <main class="worker-layout">
-    <section class="worker-welcome"><div><p class="eyebrow">YOUR SHIFT · TABLE 01</p><h1 id="worker-title">Hi, Worker.</h1><p class="intro-copy">Your next step and the shared table picture.</p></div><div id="connection-label" class="connection-pill" role="status"><span class="live-dot"></span><span>Connecting…</span></div></section>
-    <section class="panel shift-card" aria-labelledby="shift-heading"><div class="panel-heading"><div><p class="eyebrow">YOUR NEXT STEP</p><h2 id="shift-heading">My task</h2></div><span id="worker-chip" class="status-chip">—</span></div><div id="my-task" class="my-task" aria-live="polite"></div><div class="availability-row"><div><strong>Your availability</strong><span id="availability-caption">—</span></div><button id="availability-button" class="button button-outline" type="button">—</button></div><div class="worker-actions" aria-label="Guest actions"><button class="button button-soft" data-request="dessert" type="button">Dessert</button><button class="button button-soft" data-request="water" type="button">Water</button><button class="button button-soft not-ready" id="not-ready-button" type="button">Guests not ready</button></div></section>
-    <section class="shared-grid"><div class="panel shared-table"><div class="panel-heading compact-heading"><div><p class="eyebrow">SHARED TABLE</p><h2>Table 01</h2></div><span id="table-chip" class="status-chip">—</span></div><div id="guest-list" class="guest-list"></div><p class="camera-note"><span id="vision-status">Camera status loading…</span> · Camera observations are exploratory; confirm with guests.</p></div><aside class="worker-side"><section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">TEAM</p><h2>On shift</h2></div></div><div id="worker-list" class="worker-list"></div></section><section class="panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">AT THE TABLE</p><h2>Open requests</h2></div></div><div id="request-list" class="request-list"></div></section></aside></section>
-    <section class="panel history-panel"><div class="panel-heading compact-heading"><div><p class="eyebrow">RECENT NOTIFICATIONS</p><h2>Shared updates</h2></div></div><ol id="event-list" class="event-list" aria-live="polite"></ol></section>
-  </main>
-  <footer><span>ServiceMind</span><span>One team, one shared picture.</span><span class="footer-note">Worker view · shared locally</span></footer>
-</div>
-<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div class="app-shell worker-shell">
+    <header class="topbar">
+      <a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>servicemind<span class="brand-dot">.</span></span></a>
+      <nav class="view-switch" aria-label="Choose a view">
+        <a href="/admin">Admin</a><a id="worker-a-link" href="/worker/A">Worker A</a><a id="worker-b-link" href="/worker/B">Worker B</a>
+      </nav>
+    </header>
+    <main class="worker-layout">
+      <section class="worker-header" aria-label="Your shift">
+        <h1 id="worker-title">Hi, Worker.</h1>
+        <button id="availability-button" class="availability-button" type="button" data-worker-action="availability" data-action-key="availability" data-pending-label="Updating…" disabled>Loading…</button>
+      </section>
+      <p id="connection-label" class="connection-warning" role="status" hidden>Reconnecting…</p>
+      <section class="panel task-panel" aria-label="Your task">
+        <div id="my-task" aria-live="polite"><p class="idle-state">Loading your shift…</p></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

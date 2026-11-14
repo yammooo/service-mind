@@ -120,6 +120,17 @@ class VisionMonitorTests(unittest.TestCase):
         self.assertEqual([c["food_state"] for c in state["table"]["customers"]], ["empty", "food"])
         self.assertEqual(state["tasks"], [])
 
+    def test_open_request_task_does_not_block_camera_check_task(self):
+        self.store.request("1", "B", "dessert")
+        monitor = VisionMonitor(self.store)
+        monitor.start()
+        for frame_ids, detections in ((range(1, 6), FOOD), (range(6, 11), [])):
+            for frame_id in frame_ids:
+                context = monitor.begin_frame(time.monotonic(), frame_id)
+                monitor.consume_frame(context, detections)
+        tasks = self.store.snapshot()["tasks"]
+        self.assertEqual({task["type"] for task in tasks}, {"fulfill_request", "check_table"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -79,7 +79,10 @@ class Store:
                     state["vision"].setdefault("regions", defaults["regions"])
                     state["vision"].setdefault("stable_observations_required", defaults["stable_observations_required"])
                     state["vision"].setdefault("monitoring", False)
+                migration_events = self._migrate_open_requests(state)
                 self._save_state(db, state)
+                if migration_events:
+                    self._save_events(db, migration_events)
                 db.commit()
 
     def _connect(self):
@@ -103,6 +106,48 @@ class Store:
             "INSERT INTO events (at, type, message, details) VALUES (?, ?, ?, ?)",
             [(timestamp, item["type"], item["message"], json.dumps(item["details"], separators=(",", ":"))) for item in events],
         )
+
+    @staticmethod
+    def _request_task(request: dict, task_id: str) -> dict:
+        request_type = request["type"]
+        return {
+            "id": task_id,
+            "type": "fulfill_request",
+            "request_type": request_type,
+            "request_id": request["id"],
+            "reason": f"Bring {request_type} to Table 1.",
+            "status": "pending",
+            "table_id": request["table_id"],
+            "offered_to": None,
+            "worker_id": None,
+            "declined_by": [],
+        }
+
+    @classmethod
+    def _migrate_open_requests(cls, state: dict) -> list[dict]:
+        """Give legacy open requests a linked fulfillment task, once."""
+        state.setdefault("tasks", [])
+        state.setdefault("_next_task_id", 1)
+        linked_request_ids = {
+            task.get("request_id")
+            for task in state["tasks"]
+            if task.get("type") == "fulfill_request"
+        }
+        emitted = []
+        for request in state.get("requests", []):
+            if request.get("status") != "open" or request.get("id") in linked_request_ids:
+                continue
+            task = cls._request_task(request, f"task-{state['_next_task_id']}")
+            state["_next_task_id"] += 1
+            state["tasks"].append(task)
+            linked_request_ids.add(request["id"])
+            emitted.append(event(
+                "request_task_created",
+                f"Fulfillment task restored for the open {request['type']} request",
+                task_id=task["id"], request_id=request["id"], request_type=request["type"],
+            ))
+            emitted.extend(cls._offer_task(state, task))
+        return emitted
 
     @staticmethod
     def _public_state(state: dict) -> dict:
@@ -167,17 +212,20 @@ class Store:
             return []
         task["status"] = "offered"
         task["offered_to"] = worker["id"]
-        return [event("task_offered", f"Check table task offered to Worker {worker['id']}", task_id=task["id"], worker_id=worker["id"])]
+        if task["type"] == "fulfill_request":
+            message = f"{task['request_type'].title()} task offered to Worker {worker['id']}"
+            details = {"task_id": task["id"], "worker_id": worker["id"], "request_id": task["request_id"]}
+        else:
+            message = f"Check table task offered to Worker {worker['id']}"
+            details = {"task_id": task["id"], "worker_id": worker["id"]}
+        return [event("task_offered", message, **details)]
 
     @staticmethod
     def _offer_pending(state: dict) -> list[dict]:
         emitted = []
         for task in state["tasks"]:
             if task["status"] == "pending":
-                offered = Store._offer_task(state, task)
-                emitted.extend(offered)
-                if offered:
-                    break
+                emitted.extend(Store._offer_task(state, task))
         return emitted
 
     def observe(self, table_id: str, plate_id: str, food_state: str):
@@ -280,15 +328,18 @@ class Store:
             if not monitoring:
                 return [event("vision_monitoring_paused", "Observation monitoring paused")]
             emitted = [event("vision_monitoring_started", "Observation monitoring started; waiting for fresh stable evidence")]
-            active_tasks = any(task["status"] in {"pending", "offered", "assigned"} for task in state["tasks"])
+            active_check = any(
+                task["type"] == "check_table" and task["status"] in {"pending", "offered", "assigned"}
+                for task in state["tasks"]
+            )
             for customer in state["table"]["customers"]:
                 if customer["food_state"] != "unknown":
                     previous = customer["food_state"]
                     customer["food_state"] = "unknown"
                     emitted.append(event("plate_observed", f"Plate {customer['plate_id']} observation cleared for fresh monitoring", table_id="1", plate_id=customer["plate_id"], previous_state=previous, food_state="unknown", source="camera"))
-            if not active_tasks and state["table"]["status"] in {"checked", "needs_check"}:
+            if not active_check and state["table"]["status"] in {"checked", "needs_check"}:
                 state["table"]["status"] = "eating"
-            state["_automation"]["check_requested"] = active_tasks
+            state["_automation"]["check_requested"] = active_check
             return emitted
 
         return self._change(mutate)
@@ -344,8 +395,15 @@ class Store:
             task["worker_id"] = worker_id
             task["offered_to"] = None
             worker["availability"] = "busy"
-            state["table"]["status"] = "being_served"
-            return [event("task_accepted", f"Worker {worker_id} accepted the table check", task_id=task_id, worker_id=worker_id, table_id="1")]
+            if task["type"] == "check_table":
+                state["table"]["status"] = "being_served"
+                message = f"Worker {worker_id} accepted the table check"
+            else:
+                message = f"Worker {worker_id} accepted the {task['request_type']} task"
+            return [event(
+                "task_accepted", message, task_id=task_id, worker_id=worker_id,
+                table_id=task["table_id"], request_id=task.get("request_id"),
+            )]
 
         return self._change(mutate)
 
@@ -358,8 +416,10 @@ class Store:
             task["status"] = "pending"
             task["offered_to"] = None
             task["declined_by"].append(worker_id)
-            emitted = [event("task_declined", f"Worker {worker_id} declined the table check", task_id=task_id, worker_id=worker_id)]
+            description = "table check" if task["type"] == "check_table" else f"{task['request_type']} task"
+            emitted = [event("task_declined", f"Worker {worker_id} declined the {description}", task_id=task_id, worker_id=worker_id)]
             emitted.extend(self._offer_task(state, task))
+            emitted.extend(self._offer_pending(state))
             return emitted
 
         return self._change(mutate)
@@ -372,8 +432,19 @@ class Store:
                 raise DomainError("Task is not assigned to this worker")
             task["status"] = "completed"
             worker["availability"] = "available"
-            state["table"]["status"] = "checked"
-            emitted = [event("task_completed", f"Worker {worker_id} completed the table check", task_id=task_id, worker_id=worker_id, table_id="1")]
+            if task["type"] == "check_table":
+                state["table"]["status"] = "checked"
+                message = f"Worker {worker_id} completed the table check"
+            else:
+                request = next((r for r in state["requests"] if r["id"] == task["request_id"]), None)
+                if request is None or request["status"] != "open":
+                    raise DomainError("The linked request is no longer open")
+                request["status"] = "fulfilled"
+                request["fulfilled_by"] = worker_id
+                message = f"Worker {worker_id} delivered {task['request_type']} to Table 1"
+            emitted = [event("task_completed", message, task_id=task_id, worker_id=worker_id, table_id="1", request_id=task.get("request_id"))]
+            if task["type"] == "fulfill_request":
+                emitted.append(event("request_fulfilled", message, request_id=task["request_id"], worker_id=worker_id, table_id="1"))
             emitted.extend(self._offer_pending(state))
             return emitted
 
@@ -387,6 +458,12 @@ class Store:
 
         def mutate(state):
             self._worker(state, worker_id)
+            existing = next((
+                request for request in state["requests"]
+                if request["table_id"] == table_id and request["type"] == request_type and request["status"] == "open"
+            ), None)
+            if existing is not None:
+                return []
             request = {
                 "id": f"request-{state['_next_request_id']}",
                 "table_id": table_id,
@@ -396,7 +473,15 @@ class Store:
             }
             state["_next_request_id"] += 1
             state["requests"].append(request)
-            return [event("request_created", f"{request_type.title()} requested at Table 1", request_id=request["id"], table_id=table_id, worker_id=worker_id, request_type=request_type)]
+            task = self._request_task(request, f"task-{state['_next_task_id']}")
+            state["_next_task_id"] += 1
+            state["tasks"].append(task)
+            emitted = [
+                event("request_created", f"{request_type.title()} requested at Table 1", request_id=request["id"], table_id=table_id, worker_id=worker_id, request_type=request_type),
+                event("request_task_created", f"{request_type.title()} fulfillment task created", task_id=task["id"], request_id=request["id"], request_type=request_type),
+            ]
+            emitted.extend(self._offer_task(state, task))
+            return emitted
 
         return self._change(mutate)
 
@@ -412,6 +497,8 @@ class Store:
             state["table"]["status"] = "eating"
             emitted = [event("customer_not_ready", "Customers are not ready; follow-up suppressed until new plate evidence or reset", table_id=table_id)]
             for task in state["tasks"]:
+                if task["type"] != "check_table":
+                    continue
                 if task["status"] in {"pending", "offered"} and task["table_id"] == table_id:
                     task["status"] = "cancelled"
                     task["offered_to"] = None

@@ -15,11 +15,11 @@ This is an unvalidated prototype heuristic. The generic model has no plate class
 - One restaurant table, two customers/plates A and B, workers A and B.
 - Initial state: both customers eating; worker A busy, worker B available; no tasks.
 - A first empty report does not create a task. When both plates are empty, set `needs_check` and offer exactly one `check_table` task to an available worker.
-- Accept assigns the task, marks the worker busy and table `being_served`. Dessert/water requests create a shared request and timestamped event. Complete makes the worker available and table `checked`; unchanged evidence must not recreate a task.
-- Decline reoffers to another available worker. `not_ready` suppresses follow-up until relevant new evidence or reset.
+- Accepting a `check_table` task assigns it, marks that worker busy and sets the table to `being_served`. Dessert/water requests create one shared request and linked `fulfill_request` task; offer it to an available worker, or leave it pending until one becomes available. Accepting a fulfillment task marks that worker busy; completing it fulfills the linked request without changing the table-check status. Completing a check task makes its worker available and sets the table to `checked`.
+- Decline reoffers that task to another available worker and can offer other pending work to the decliner. Repeated clicks on the same still-open request type do not create duplicate requests/tasks. `not_ready` cancels check-table tasks and suppresses further table-check follow-up until relevant new plate evidence or reset; it does not cancel request fulfillment.
 - Duplicate/unchanged observations add no events or tasks. Unknown is never empty.
 - Reset restores deterministic world state and retains chronological history with a reset event.
-- State enums: table `eating`, `needs_check`, `being_served`, `checked`; task `pending`, `offered`, `assigned`, `completed`, `cancelled`.
+- Only an active `check_table` task controls table-check state and not-ready cancellation; an active fulfillment task must not suppress new table evidence. State enums: table `eating`, `needs_check`, `being_served`, `checked`; task types `check_table`, `fulfill_request`; task statuses `pending`, `offered`, `assigned`, `completed`, `cancelled`.
 
 ## Implementation and verification
 
