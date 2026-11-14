@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f6f1" />
+    <title>ServiceMind · Restaurant service, in sync</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="ServiceMind admin home">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>servicemind<span class="brand-dot">.</span></span>
+        </a>
+        <div class="topbar-right">
+          <span class="local-badge"><span class="live-dot"></span> Local demo</span>
+          <nav class="view-switch" aria-label="Choose a view">
+            <a data-view="admin" href="/">Overview</a>
+            <a data-view="A" href="/?worker=A">Worker A</a>
+            <a data-view="B" href="/?worker=B">Worker B</a>
+          </nav>
+        </div>
+      </header>
+
+      <main id="main-content">
+        <section class="intro-row">
+          <div>
+            <p class="eyebrow" id="view-eyebrow">Restaurant · Service overview</p>
+            <h1 id="page-title">Good service starts with a good moment.</h1>
+            <p class="intro-copy" id="page-copy">A shared view of the floor, so the right person can check in at the right time.</p>
+          </div>
+          <div class="connection-pill" role="status"><span class="live-dot"></span><span id="connection-label">Connecting</span></div>
+        </section>
+
+        <section class="summary-grid" aria-label="Live restaurant summary">
+          <article class="summary-card table-summary">
+            <div class="summary-top"><span class="card-label">TABLE 01</span><span class="summary-icon" aria-hidden="true">◉</span></div>
+            <div class="summary-value" id="table-status">—</div>
+            <div class="summary-note" id="plate-summary">Two guests · Plates A and B</div>
+          </article>
+          <article class="summary-card">
+            <div class="summary-top"><span class="card-label">ON THE FLOOR</span><span class="summary-icon worker-icon" aria-hidden="true">↗</span></div>
+            <div class="summary-value" id="available-count">—</div>
+            <div class="summary-note">team members available</div>
+          </article>
+          <article class="summary-card">
+            <div class="summary-top"><span class="card-label">OPEN REQUESTS</span><span class="summary-icon request-icon" aria-hidden="true">✳</span></div>
+            <div class="summary-value" id="request-count">—</div>
+            <div class="summary-note">shared with the team</div>
+          </article>
+        </section>
+
+        <div class="content-grid">
+          <div class="main-column">
+            <section class="panel table-panel" aria-labelledby="table-heading">
+              <div class="panel-heading">
+                <div><p class="eyebrow">THE FLOOR</p><h2 id="table-heading">Table 01</h2></div>
+                <span class="status-chip" id="table-chip">—</span>
+              </div>
+              <div id="guest-list" class="guest-list" aria-live="polite"></div>
+              <div id="mock-controls" class="mock-controls" hidden>
+                <div class="section-label-row"><div><p class="eyebrow">DEMO CONTROL</p><h3>Simulate plate observations</h3></div><span class="mock-label">MOCK VISION</span></div>
+                <p class="muted small-copy">These buttons send labeled observations through the mock vision API. Unknown never counts as empty.</p>
+                <div class="plate-controls" id="plate-controls"></div>
+                <button class="button button-quiet reset-button" id="reset-button" type="button">Reset demo state</button>
+              </div>
+            </section>
+
+            <section class="panel task-panel" aria-labelledby="tasks-heading">
+              <div class="panel-heading compact-heading">
+                <div><p class="eyebrow">NEXT BEST ACTION</p><h2 id="tasks-heading">Team tasks</h2></div>
+                <span class="count-chip" id="task-count">0</span>
+              </div>
+              <div id="task-list" class="task-list" aria-live="polite"></div>
+            </section>
+
+            <section id="worker-actions" class="panel worker-panel" aria-labelledby="shift-heading" hidden>
+              <div class="panel-heading compact-heading">
+                <div><p class="eyebrow">YOUR SHIFT</p><h2 id="shift-heading">Your next step</h2></div>
+                <span class="status-chip" id="worker-chip">—</span>
+              </div>
+              <div id="my-task" class="my-task"></div>
+              <div class="worker-tools">
+                <div class="availability-row">
+                  <div><strong>Your availability</strong><span id="availability-caption">Set your shift status</span></div>
+                  <button class="button button-outline" id="availability-button" type="button">—</button>
+                </div>
+                <div class="worker-action-row">
+                  <button class="button button-soft" data-request="dessert" type="button">🍰 Dessert</button>
+                  <button class="button button-soft" data-request="water" type="button">💧 Water</button>
+                  <button class="button button-soft not-ready-button" id="not-ready-button" type="button">Guests not ready</button>
+                </div>
+                <p class="muted small-copy">Requests and corrections are shared with everyone on the floor.</p>
+              </div>
+            </section>
+          </div>
+
+          <aside class="side-column">
+            <section class="panel team-panel" aria-labelledby="team-heading">
+              <div class="panel-heading compact-heading"><div><p class="eyebrow">PEOPLE</p><h2 id="team-heading">On shift</h2></div><span class="count-chip">2</span></div>
+              <div id="worker-list" class="worker-list"></div>
+            </section>
+            <section class="panel requests-panel" aria-labelledby="requests-heading">
+              <div class="panel-heading compact-heading"><div><p class="eyebrow">AT THE TABLE</p><h2 id="requests-heading">Guest requests</h2></div></div>
+              <div id="request-list" class="request-list"></div>
+            </section>
+            <section class="panel history-panel" aria-labelledby="history-heading">
+              <div class="panel-heading compact-heading"><div><p class="eyebrow">SHARED CONTEXT</p><h2 id="history-heading">Recent activity</h2></div></div>
+              <ol id="event-list" class="event-list" aria-live="polite"></ol>
+            </section>
+          </aside>
+        </div>
+      </main>
+
+      <footer><span>ServiceMind</span><span>One team, one shared picture.</span><span class="footer-note">Prototype · mock observations only</span></footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
