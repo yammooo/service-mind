@@ -8,7 +8,17 @@ import java.net.URL
 import java.net.URLEncoder
 
 object ServiceMindApi {
-    fun getState(baseUrl: String): JSONObject = request(baseUrl, "GET", "/api/state")
+    fun getState(baseUrl: String): JSONObject {
+        val state = request(baseUrl, "GET", "/api/state")
+        if (state.has("mode")) requireLegacyMode(state.optString("mode"))
+        return state
+    }
+
+    internal fun requireLegacyMode(mode: String?) {
+        if (mode != null && mode != "legacy") {
+            throw IOException("Android companion requires SERVICE_MIND_MODE=legacy")
+        }
+    }
 
     fun setAvailability(baseUrl: String, workerId: String, availability: String): JSONObject =
         request(baseUrl, "POST", "/api/workers/${segment(workerId)}/availability", json("availability" to availability))

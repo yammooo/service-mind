@@ -1,6 +1,6 @@
 # Android companion scope
 
-This subtree is the separately authorized ServiceMind Android worker companion. It may integrate Meta Wearables Device Access Toolkit 1.0.1 and MockDeviceKit despite the prototype-wide Meta exclusion above; that exception applies only here and does not change the backend, camera service, or UNO Q deployment.
+This subtree is the separately scoped ServiceMind Android worker companion. It may integrate Meta Wearables Device Access Toolkit 1.0.1 and MockDeviceKit; this applies only to the Android client and does not change the backend, camera service, or UNO Q deployment.
 
 Keep the prototype small: native Android UI, existing HTTP API, one-second state polling, editable local backend URL, one selected worker, press-to-talk/final transcript handling, and a clear MockDevice mode. No cloud speech, LLM, camera access, login, new backend, or new state store. Test API mutations only against a temporary SQLite database and local test server; never reset or mutate the user's demo server during validation.
 

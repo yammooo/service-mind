@@ -19,6 +19,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. For an emulator, t
 From the repository root, start the existing server against a disposable database and mock vision provider. This is for local testing; it does not use or reset the live demo database.
 
 ```bash
+SERVICE_MIND_MODE=legacy \
 SERVICE_MIND_DB=/tmp/service-mind-android-demo.sqlite3 \
 VISION_PROVIDER=mock \
 uvicorn backend.main:app --host 127.0.0.1 --port 7001 --timeout-graceful-shutdown 5
@@ -28,7 +29,7 @@ The prototype API has no authentication. Keep it bound to loopback or a trusted 
 
 ## Validation status
 
-The source compiles, four unit tests pass, and the backend API flow was exercised against a loopback server with a disposable SQLite database. This host's Android emulator exits with SIGSEGV before Android finishes booting, so the DAT MockDevice session and injected speech flow have not been runtime-tested here. No phone or physical glasses were tested.
+The source compiles, five JVM unit tests pass, and the backend API flow was exercised against a loopback server with a disposable SQLite database. This host's Android emulator exits with SIGSEGV before Android finishes booting, so the DAT MockDevice session and injected speech flow have not been runtime-tested here. No phone or physical glasses were tested.
 
 ## Mock glasses flow and limits
 
