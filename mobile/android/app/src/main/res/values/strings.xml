@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ServiceMind Glasses</string>
+    <string name="mwdat_application_id" translatable="false">0</string>
+    <string name="mwdat_client_token" translatable="false">0</string>
+</resources>
