@@ -209,6 +209,8 @@ def camera_worker():
 @app.on_event("startup")
 def start_camera():
     global worker_thread
+    if getattr(app.state, "mode", "legacy") == "simulation":
+        return
     worker_thread = threading.Thread(target=camera_worker, name="vision-camera", daemon=True)
     worker_thread.start()
 

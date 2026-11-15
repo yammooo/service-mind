@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f3f4ef" />
+  <link rel="icon" href="data:," />
+  <title>ServiceMind · Floor simulation</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/simulation.css" />
+  <script src="/assets/simulation.js" defer></script>
+</head>
+<body>
+  <div class="app-shell simulation-shell">
+    <header class="topbar">
+      <a class="brand" href="/simulation" aria-label="ServiceMind simulation home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>servicemind<span class="brand-dot">.</span></span></a>
+      <div class="topbar-right"><span class="simulation-badge"><span class="live-dot"></span>Simulation · local only</span></div>
+    </header>
+
+    <main>
+      <section class="story-header">
+        <div class="story-title"><p class="eyebrow">FOUR BEATS · TABLE 4 DELAY</p><h1>Hold the Table 4 mains.</h1></div>
+        <div class="playback" aria-label="Story controls"><button id="play" class="play-button" type="button"><span aria-hidden="true">▶</span> Play story</button><button id="pause" class="pause-button" type="button" disabled>Pause</button><button id="restart" class="restart-button" type="button">Restart</button><div class="clock-readout"><span id="run-state">Paused</span><strong id="floor-clock">00:00</strong></div></div>
+      </section>
+      <div class="beat-indicator" aria-live="polite"><span id="beat-count">1 / 4</span><strong id="beat-title">Worker A visits Table 4</strong></div>
+
+      <section class="simulation-layout">
+        <div class="floor-stage panel">
+          <div class="stage-heading"><div><span class="stage-kicker">SERVICE FLOOR</span><strong>Table 4 order · Table 2 water</strong></div><div class="legend"><span><i class="legend-worker"></i> Worker</span><span><i class="legend-guest"></i> Guest</span><span><i class="legend-route"></i> Route</span></div></div>
+          <div class="floor-scroll">
+            <svg id="floor-map" viewBox="0 0 1000 820" role="group" aria-label="Top-down restaurant floor plan with two dining rooms, kitchen, bar, and three workers">
+              <defs>
+                <pattern id="floor-grain" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r=".8" fill="#dfe4dc" /></pattern>
+                <marker id="route-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#428768" /></marker>
+                <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#24392d" flood-opacity=".12" /></filter>
+              </defs>
+              <rect class="floor-base" x="8" y="8" width="984" height="804" rx="24" />
+              <rect class="floor-texture" x="8" y="8" width="984" height="804" rx="24" />
+              <g class="room room-one">
+                <path class="room-fill" d="M42 42H478V453H317V474H203V453H42Z" />
+                <path class="wall" d="M42 453V42H478V453M478 453H317M203 453H42M203 453V474M317 474V453" />
+                <text class="room-label" x="64" y="78">ROOM 01</text><text class="room-subtitle" x="64" y="104">Dining room</text>
+              </g>
+              <g class="room room-two">
+                <path class="room-fill" d="M522 42H958V453H797V474H683V453H522Z" />
+                <path class="wall" d="M522 453V42H958V453M958 453H797M683 453H522M683 453V474M797 474V453" />
+                <text class="room-label" x="544" y="78">ROOM 02</text><text class="room-subtitle" x="544" y="104">Dining room</text>
+              </g>
+              <g class="corridor">
+                <path class="corridor-fill" d="M22 493H978V788H22Z" />
+                <path class="corridor-line" d="M22 493H203M317 493H683M797 493H978M22 788H978" />
+                <text class="corridor-label" x="502" y="763">SERVICE CORRIDOR</text>
+              </g>
+              <g class="station station-kitchen" aria-label="Kitchen">
+                <rect x="52" y="526" width="174" height="152" rx="18" /><path d="M70 550h138M70 640h138" />
+                <path class="station-icon" d="M93 582c-8-13 7-19 0-31m24 31c-8-13 7-19 0-31m24 31c-8-13 7-19 0-31" />
+                <text x="139" y="628">KITCHEN</text><text class="station-state" id="kitchen-state" x="139" y="657">Ready orders</text>
+              </g>
+              <g class="station station-bar" aria-label="Bar">
+                <rect x="254" y="526" width="174" height="152" rx="18" /><path d="M272 550h138M272 640h138" />
+                <path class="station-icon" d="M320 570h36l-6 25h-24zm7 25v13m22-13v13m-31 0h40" />
+                <text x="341" y="628">BAR</text><text class="station-state" id="bar-state" x="341" y="657">Water · dessert</text>
+              </g>
+              <g class="room-door-labels"><text x="260" y="486">ROOM 1 ENTRY</text><text x="740" y="486">ROOM 2 ENTRY</text></g>
+
+              <g id="route-layer" aria-hidden="true"></g>
+              <g id="table-layer"></g>
+              <g id="bubble-layer" aria-hidden="true"></g>
+              <g id="worker-layer"></g>
+            </svg>
+          </div>
+          <div class="stage-foot"><span id="stage-caption">The floor is paused. Play the four-beat Table 4 story.</span><span class="sim-label">Illustrative actors · no real camera input</span></div>
+        </div>
+
+        <aside class="story-side">
+          <section class="brain-panel panel" aria-labelledby="brain-heading">
+            <div class="side-heading"><span class="brain-orbit" aria-hidden="true"><i></i><i></i><i></i></span><div><span class="stage-kicker">SERVICEMIND BRAIN</span><h2 id="brain-heading">Live decision</h2></div><span class="brain-live">LIVE</span></div>
+            <p id="brain-message" class="brain-message">Waiting for simulated floor events.</p>
+            <div id="decision-meta" class="decision-meta">Backend task routing is the source of every assignment.</div>
+            <div class="latest-task"><span class="task-pip"></span><div><span class="stage-kicker">ACTIVE INSTRUCTION</span><strong id="active-instruction">No active task</strong></div></div>
+            <div class="caption-disclaimer">Glasses / phone captions are simulated examples. No device, camera, or glasses integration is connected.</div>
+          </section>
+
+          <section class="controls-panel panel" aria-labelledby="controls-heading">
+            <div class="side-heading"><div><span class="stage-kicker">ONE MANUAL OVERRIDE</span><h2 id="controls-heading">Table 4 hold</h2></div><span id="connection" class="connection"><i></i> Connecting</span></div>
+            <div class="control-row"><button id="hold-table" class="control-button hold-control" type="button">Set manual hold</button><button id="clear-hold" class="control-button" type="button" disabled>Clear hold</button></div>
+            <p class="control-note">A manual hold stays until you clear it. Pause freezes time, scripted inputs, and movement.</p>
+          </section>
+
+          <section class="caption-panel panel" aria-labelledby="caption-heading">
+            <div class="side-heading"><div><span class="stage-kicker">SIMULATED GUEST + WAITER MESSAGES</span><h2 id="caption-heading">Floor messages</h2></div><span class="caption-mark">TXT</span></div>
+            <ol id="caption-feed" class="caption-feed"><li class="caption-empty">Messages and dispatch reasons appear here.</li></ol>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <footer><span>ServiceMind floor simulation</span><span>Single controller tab · simulated movement</span><span>Not a real glasses or perception system</span></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
